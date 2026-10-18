@@ -1,208 +1,81 @@
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.parcelize)
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.jetbrains.compose)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.hilt.android)
-    alias(libs.plugins.ksp)
-}
-
-android {
-    namespace = "com.example.myplayer"
-    compileSdk = 36
-
-    defaultConfig {
-        applicationId = "com.example.myplayer"
-        minSdk = 28
-        targetSdk = 36
-        versionCode = 11
-        versionName = "4.0"
-
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-        // Read Play Integrity project number from local.properties (never commit this)
-        val playProjectNumber = project.findProperty("play.integrity.projectNumber")?.toString()
-            ?: "0" // Replace 0 with your Google Cloud project number linked to Play Console
-        buildConfigField("String", "PLAY_INTEGRITY_PROJECT_NUMBER", "\"$playProjectNumber\"")
-
-        // Read Last.fm API key from local.properties or gradle.properties (never hardcode in Kotlin)
-        val lastFmApiKey = project.findProperty("lastfm.apiKey")?.toString() ?: ""
-        buildConfigField("String", "LASTFM_API_KEY", "\"$lastFmApiKey\"")
-
-        // Embed the NDK native library
-        ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
-        }
-
-        externalNativeBuild {
-            cmake {
-                cppFlags += listOf("-std=c++17", "-fstack-protector-strong", "-O2")
-                arguments += listOf("-DANDROID_STL=c++_static")
-            }
-        }
-    }
-
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
-        }
-    }
-
-    buildTypes {
-        release {
-            // ─── Phase 1: R8 hardening ──────────────────────────────────────
-            isMinifyEnabled = true
-            isShrinkResources = true
-            isDebuggable = false
-
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-            signingConfig = signingConfigs.getByName("debug")
-        }
-        debug {
-            isMinifyEnabled = false
-            isDebuggable = true
-        }
-    }
-
-    buildFeatures {
-        compose = true
-        buildConfig = true   // needed for PLAY_INTEGRITY_PROJECT_NUMBER
-        aidl = true
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
-        isCoreLibraryDesugaringEnabled = true
-    }
-    
-    lint {
-        baseline = file("lint-baseline.xml")
-    }
-
-    sourceSets {
-        getByName("debug") {
-            java.srcDir("build/generated/ksp/debug/kotlin")
-            java.srcDir("build/generated/ksp/debug/java")
-        }
-        getByName("release") {
-            java.srcDir("build/generated/ksp/release/kotlin")
-            java.srcDir("build/generated/ksp/release/java")
-        }
-    }
-
-    packaging {
-        resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
-        }
-    }
-
-    testOptions {
-        unitTests.isReturnDefaultValues = true
-    }
 }
 
 kotlin {
-    jvmToolchain(11)
-    compilerOptions {
-        freeCompilerArgs.addAll(
-            "-P",
-            "plugin:androidx.compose.compiler.plugins.kotlin:metricsDestination=${project.layout.buildDirectory.get().asFile.absolutePath}/compose_metrics",
-            "-P",
-            "plugin:androidx.compose.compiler.plugins.kotlin:reportsDestination=${project.layout.buildDirectory.get().asFile.absolutePath}/compose_metrics"
-        )
+    jvmToolchain(21)
+    sourceSets {
+        main {
+            kotlin.srcDirs("src/main/java")
+            resources.srcDirs("src/main/resources")
+        }
     }
 }
 
-composeCompiler {
-    enableStrongSkippingMode = true
-    stabilityConfigurationFiles.add(layout.projectDirectory.file("compose_stability.conf"))
+tasks.withType<ProcessResources> {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.withType<Copy> {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+compose.desktop {
+    application {
+        mainClass = "com.example.myplayer.MainKt"
+        nativeDistributions {
+            targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe)
+            packageName = "MyPlayer"
+            packageVersion = "4.0.0"
+            windows {
+                menuGroup = "MyPlayer"
+                upgradeUuid = "68c22756-3474-4ec5-b006-258d4a9ec110"
+            }
+        }
+    }
 }
 
 dependencies {
-    // Baseline Profile installer for runtime ahead-of-time DEX optimization
-    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
+    implementation(compose.desktop.currentOs)
+    implementation(compose.material3)
+    implementation(compose.materialIconsExtended)
+    implementation(compose.foundation)
+    implementation(compose.ui)
+    implementation(compose.components.resources)
 
-    // Core library desugaring — backports Java APIs (e.g. URLDecoder.decode(String, Charset))
-    // to pre-API 33 devices. Required by NewPipeExtractor v0.26+ which calls that API.
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")
-
-    implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.documentfile)
-    implementation(libs.androidx.datastore.preferences)
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.ui.graphics)
-    implementation(libs.androidx.compose.ui.tooling.preview)
-    implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.material.icons.extended)
-
-    // Hilt
-    implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
-    implementation(libs.androidx.hilt.navigation.compose)
-    implementation(libs.androidx.hilt.work)
-    ksp(libs.androidx.hilt.compiler)
-
-    // Room
-    implementation(libs.room.runtime)
-    implementation(libs.room.ktx)
-    ksp(libs.room.compiler)
-
-    // Media3
-    implementation(libs.media3.exoplayer)
-    implementation(libs.media3.session)
-    implementation(libs.media3.ui)
-    implementation(libs.media3.datasource.okhttp)
-    implementation(libs.media3.exoplayer.dash)
-    implementation(libs.media3.exoplayer.hls)
-
-    // Navigation Compose
-    implementation(libs.navigation.compose)
-
-    // Coil
-    implementation(libs.coil.compose)
-
-    // OkHttp
-    implementation(libs.okhttp)
-    implementation(libs.okhttp.logging.interceptor)
-
-    // Kotlinx Serialization
-    implementation(libs.kotlinx.serialization.json)
-
-    // NewPipeExtractor
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.3")
-
-    // WorkManager
-    implementation(libs.work.runtime.ktx)
-
-    // Paging
-    implementation(libs.paging.runtime.ktx)
-    implementation(libs.paging.compose)
-
-    // ─── Security Dependencies ──────────────────────────────────────────────
-    // Play Integrity API (Phase 5)
-    implementation(libs.play.integrity)
-
-    // Annotations for security code
+    // Core JVM & DI annotations
+    implementation(libs.javax.inject)
+    implementation(libs.org.json)
     implementation(libs.androidx.annotation)
 
+
+    // Navigation & Lifecycle
+    implementation(libs.navigation.compose.kmp)
+    implementation(libs.lifecycle.viewmodel.compose.kmp)
+    implementation(libs.coroutines.swing)
+
+
+    // Audio Engine: VLCJ
+    implementation(libs.vlcj)
+
+    // Persistence: SQLite JDBC & DataStore
+    implementation(libs.sqlite.jdbc)
+    implementation("androidx.datastore:datastore-preferences-core:1.1.1")
+
+    // Image Loading: Coil 3 Multiplatform
+    implementation(libs.coil3.compose)
+    implementation(libs.coil3.network.okhttp)
+
+    // Networking & YouTube/Streaming
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging.interceptor)
+    implementation(libs.kotlinx.serialization.json)
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.3")
+
+    // Testing
     testImplementation(libs.junit)
     testImplementation("org.json:json:20240303")
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
-    androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
-    debugImplementation(libs.androidx.compose.ui.tooling)
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
-    
-    // Kotlin Parcelize runtime
-    implementation("org.jetbrains.kotlin:kotlin-parcelize-runtime:2.1.0")
 }

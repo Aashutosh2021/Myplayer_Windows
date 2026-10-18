@@ -41,15 +41,18 @@ class SongRepository @Inject constructor(
     fun getAllFolders(): Flow<List<FolderEntity>> = folderDao.getAllFolders()
 
     suspend fun addFolder(uri: String, name: String) = withContext(Dispatchers.IO) {
-        // Disabled: no local folders
+        val folder = FolderEntity(uri, name)
+        folderDao.addFolder(folder)
+        mediaScanner.scanFolder(folder)
     }
 
     suspend fun removeFolder(folder: FolderEntity) = withContext(Dispatchers.IO) {
-        // Disabled: no local folders
+        folderDao.deleteFolder(folder)
+        songDao.deleteSongsByFolder(folder.uri)
     }
 
     suspend fun rescanAllFolders() = withContext(Dispatchers.IO) {
-        // Disabled: no local folders
+        mediaScanner.scanAllFolders()
     }
 
     suspend fun getSongById(id: String): SongEntity? = withContext(Dispatchers.IO) {

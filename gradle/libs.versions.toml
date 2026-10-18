@@ -7,6 +7,12 @@ espressoCore = "3.7.0"
 lifecycleRuntimeKtx = "2.10.0"
 activityCompose = "1.13.0"
 kotlin = "2.1.0"
+composeMultiplatform = "1.7.3"
+vlcj = "4.8.3"
+sqliteJdbc = "3.47.2.0"
+coil3 = "3.0.4"
+navigationComposeKmp = "2.8.0-alpha10"
+lifecycleKmp = "2.8.4"
 composeBom = "2026.02.01"
 hilt = "2.59.2"
 hiltNavigationCompose = "1.2.0"
@@ -23,6 +29,7 @@ workManager = "2.9.1"
 paging = "3.3.4"
 playIntegrity = "1.4.0"
 annotation = "1.9.1"
+
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -77,7 +84,21 @@ paging-compose = { group = "androidx.paging", name = "paging-compose", version.r
 play-integrity = { group = "com.google.android.play", name = "integrity", version.ref = "playIntegrity" }
 androidx-annotation = { group = "androidx.annotation", name = "annotation", version.ref = "annotation" }
 
+# Desktop Audio & Persistence
+vlcj = { group = "uk.co.caprica", name = "vlcj", version.ref = "vlcj" }
+sqlite-jdbc = { group = "org.xerial", name = "sqlite-jdbc", version.ref = "sqliteJdbc" }
+coil3-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil3" }
+coil3-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil3" }
+navigation-compose-kmp = { group = "org.jetbrains.androidx.navigation", name = "navigation-compose", version.ref = "navigationComposeKmp" }
+lifecycle-viewmodel-compose-kmp = { group = "org.jetbrains.androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycleKmp" }
+coroutines-swing = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-swing", version = "1.9.0" }
+javax-inject = { group = "javax.inject", name = "javax.inject", version = "1" }
+org-json = { group = "org.json", name = "json", version = "20240303" }
+
+
 [plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+jetbrains-compose = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
@@ -85,3 +106,4 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 hilt-android = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 kotlin-parcelize = { id = "org.jetbrains.kotlin.plugin.parcelize", version.ref = "kotlin" }
+

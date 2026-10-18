@@ -121,34 +121,9 @@ ext
 +--- app
 |    +--- .gitignore
 |    +--- build.gradle.kts
-|    +--- lint-baseline.xml
-|    +--- proguard-rules.pro
 |    \--- src
-|         +--- androidTest
-|         |    \--- java
-|         |         \--- com
-|         |              \--- example
-|         |                   \--- myplayer
-|         |                        \--- ExampleInstrumentedTest.kt
-|         +--- main
-|         |    +--- AndroidManifest.xml
-|         |    +--- ic_launcher-playstore.png
-|         |    +--- aidl
-|         |    |    \--- com
-|         |    |         \--- example
-|         |    |              \--- aria
-|         |    |                   \--- connector
-|         |    |                        +--- AppCommandContainer.aidl
-|         |    |                        +--- AppResponseContainer.aidl
-|         |    |                        +--- Capability.aidl
-|         |    |                        +--- ConnectorVersionInfo.aidl
-|         |    |                        +--- EcosystemEventContainer.aidl
-|         |    |                        +--- IAriaCallback.aidl
-|         |    |                        \--- IAriaConnector.aidl
-|         |    +--- cpp
-|         |    |    +--- CMakeLists.txt
-|         |    |    \--- native-lib.cpp
-|         |    +--- java
+|         \--- main
+|              \--- java
 |         |    |    \--- com
 |         |    |         \--- example
 |         |              +--- aria
@@ -165,8 +140,7 @@ ext
 |         |              |              +--- AriaConnectorService.kt
 |         |              |              \--- MusicConnectorService.kt
 |         |              \--- myplayer
-|         |                   +--- MainActivity.kt
-|         |                   +--- MyPlayerApplication.kt
+|         |                   +--- Main.kt
 |         |                   +--- aria
 |         |                   |    +--- cache
 |         |                   |    |    \--- AriaMemoryCache.kt
@@ -558,6 +532,5 @@ ext
 +--- gradle.properties
 +--- gradlew
 +--- gradlew.bat
-+--- local.properties
 +--- settings.gradle.kts
 \--- structure.md

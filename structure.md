@@ -1,4 +1,4 @@
-﻿# Project Structure
+# Project Structure
 
 `
 ext
@@ -113,14 +113,11 @@ ext
 +--- .gitignore
 +--- .vscode
 |    \--- settings.json
-+--- Agent_BOOT.md
+
 +--- CLAUDE.md
 +--- CONTRIBUTING.md
 +--- LICENSE
-+--- PROMPT.md
 +--- README.md
-+--- RELEASE_NOTES_v3.5.md
-+--- RELEASE_NOTES_v3.6.md
 +--- app
 |    +--- .gitignore
 |    +--- build.gradle.kts
@@ -536,9 +533,27 @@ ext
 |    |    +--- graph.json
 |    |    +--- GRAPH_REPORT.md
 |    |    \--- manifest.json
-|    \--- cache
-|         \--- ast
-|              \--- v0.9.80-s6
+|    +--- 2026-10-17
+|    |    +--- .graphify_labels.json
+|    |    +--- graph.json
+|    |    +--- GRAPH_REPORT.md
+|    |    \--- manifest.json
+|    +--- 2026-10-18
+|    |    +--- .graphify_labels.json
+|    |    +--- graph.json
+|    |    +--- GRAPH_REPORT.md
+|    |    \--- manifest.json
+|    +--- cache
+|    \--- .graphify_labels.json
+|    \--- .graphify_labels.json.sig
+|    \--- .graphify_python
+|    \--- .graphify_root
+|    \--- .graphify_uncached.txt
+|    \--- cost.json
+|    \--- graph.html
+|    \--- graph.json
+|    \--- GRAPH_REPORT.md
+|    \--- manifest.json
 +--- build.gradle.kts
 +--- gradle.properties
 +--- gradlew

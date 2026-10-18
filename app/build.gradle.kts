@@ -33,6 +33,7 @@ compose.desktop {
             modules(
                 "java.base",
                 "java.desktop",
+                "java.datatransfer",
                 "java.sql",
                 "java.naming",
                 "java.management",
@@ -40,7 +41,9 @@ compose.desktop {
                 "java.logging",
                 "java.prefs",
                 "java.xml",
+                "java.net.http",
                 "jdk.unsupported",
+                "jdk.dynalink",
                 "jdk.crypto.ec"
             )
             windows {

@@ -201,6 +201,57 @@ object AppContainer {
         )
         register(com.example.myplayer.data.recommendation.RecommendationCoordinator::class.java, recommendationCoordinator)
 
+        val audioOutputDevice: com.example.myplayer.dualbud.audio.AudioOutputDevice = com.example.myplayer.dualbud.audio.AndroidAudioTrackOutput()
+        register(com.example.myplayer.dualbud.audio.AudioOutputDevice::class.java, audioOutputDevice)
+
+        val dualChannelPlaybackManager = com.example.myplayer.dualbud.DualChannelPlaybackManager(
+            context = appContext,
+            cacheDataSourceFactory = null,
+            outputDevice = audioOutputDevice
+        )
+        register(com.example.myplayer.dualbud.DualChannelPlaybackManager::class.java, dualChannelPlaybackManager)
+
+        val syncDiscovery = com.example.myplayer.sync.SyncDiscovery(appContext)
+        register(com.example.myplayer.sync.SyncDiscovery::class.java, syncDiscovery)
+
+        val syncTrackMatcher = com.example.myplayer.sync.SyncTrackMatcher(db.songDao(), db.downloadedSongDao(), appContext)
+        register(com.example.myplayer.sync.SyncTrackMatcher::class.java, syncTrackMatcher)
+
+        val syncPlayManager = com.example.myplayer.sync.SyncPlayManager(
+            discovery = syncDiscovery,
+            trackMatcher = syncTrackMatcher,
+            musicController = musicController,
+            innertubeApi = innertubeApi,
+            downloadRepository = downloadRepository,
+            downloadedSongDao = db.downloadedSongDao()
+        )
+        register(com.example.myplayer.sync.SyncPlayManager::class.java, syncPlayManager)
+
+        val preferencesManager = com.example.myplayer.data.local.prefs.PreferencesManager(appContext)
+        register(com.example.myplayer.data.local.prefs.PreferencesManager::class.java, preferencesManager)
+
+        val updateChecker = com.example.myplayer.data.update.UpdateChecker(appContext, okHttpClient)
+        register(com.example.myplayer.data.update.UpdateChecker::class.java, updateChecker)
+
+        val backupRestoreManager = com.example.myplayer.data.backup.BackupRestoreManager(
+            context = appContext,
+            db = db,
+            settingsDataStore = settingsDataStore,
+            preferencesManager = preferencesManager,
+            downloadRepository = downloadRepository,
+            innertubeApi = innertubeApi
+        )
+        register(com.example.myplayer.data.backup.BackupRestoreManager::class.java, backupRestoreManager)
+
+        val onlineSearchRepository = com.example.myplayer.data.repository.OnlineSearchRepository(innertubeApi, db.recentSearchDao())
+        register(com.example.myplayer.data.repository.OnlineSearchRepository::class.java, onlineSearchRepository)
+
+        val lyricsRepository = com.example.myplayer.data.lyrics.LyricsRepository(okHttpClient, db.cachedLyricsDao())
+        register(com.example.myplayer.data.lyrics.LyricsRepository::class.java, lyricsRepository)
+
+        val hybridLibraryRepository = com.example.myplayer.data.repository.HybridLibraryRepository(db.downloadedSongDao(), db.songDao())
+        register(com.example.myplayer.data.repository.HybridLibraryRepository::class.java, hybridLibraryRepository)
+
         println("[AppContainer] Desktop dependencies initialized.")
     }
 
@@ -229,7 +280,12 @@ object AppContainer {
         val params = constructor.genericParameterTypes.map { paramType ->
             resolveType(paramType)
         }.toTypedArray()
-        return constructor.newInstance(*params) as VM
+        try {
+            return constructor.newInstance(*params) as VM
+        } catch (e: Exception) {
+            println("[AppContainer] Failed to construct ${modelClass.name} with params: ${params.joinToString()}")
+            throw e
+        }
     }
 
     private fun resolveType(genericType: Type): Any? {

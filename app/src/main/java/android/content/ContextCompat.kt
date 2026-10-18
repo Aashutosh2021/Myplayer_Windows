@@ -233,3 +233,5 @@ object Environment {
     const val DIRECTORY_MUSIC = "Music"
     const val DIRECTORY_DOWNLOADS = "Download"
 }
+
+open class ContextWrapper(base: Context? = null) : Context()

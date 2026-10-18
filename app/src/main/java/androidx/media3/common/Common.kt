@@ -85,6 +85,7 @@ open class PlaybackException(
         const val ERROR_CODE_DECODER_INIT_FAILED = 4001
         const val ERROR_CODE_DECODER_QUERY_FAILED = 4002
         const val ERROR_CODE_DECODING_FAILED = 4003
+        const val ERROR_CODE_FAILED_RUNTIME_CHECK = 1004
     }
 }
 

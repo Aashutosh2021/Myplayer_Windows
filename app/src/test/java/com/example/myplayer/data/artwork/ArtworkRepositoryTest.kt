@@ -110,7 +110,7 @@ class ArtworkRepositoryTest {
     }
 
     private class FakeContext(private val baseDir: File) : android.content.ContextWrapper(null) {
-        override fun getCacheDir(): File = baseDir
-        override fun getApplicationContext(): Context = this
+        override val cacheDir: File get() = baseDir
+        override val applicationContext: Context get() = this
     }
 }

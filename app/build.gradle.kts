@@ -30,6 +30,19 @@ compose.desktop {
             targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe)
             packageName = "MyPlayer"
             packageVersion = "4.0.0"
+            modules(
+                "java.base",
+                "java.desktop",
+                "java.sql",
+                "java.naming",
+                "java.management",
+                "java.instrument",
+                "java.logging",
+                "java.prefs",
+                "java.xml",
+                "jdk.unsupported",
+                "jdk.crypto.ec"
+            )
             windows {
                 menuGroup = "MyPlayer"
                 upgradeUuid = "68c22756-3474-4ec5-b006-258d4a9ec110"

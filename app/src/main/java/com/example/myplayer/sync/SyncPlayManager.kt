@@ -1028,6 +1028,7 @@ class SyncPlayManager @Inject constructor(
     }
 
     private fun getLocalIpAddress(): String? {
+        android.net.nsd.NsdManager.findBestLanInetAddress()?.hostAddress?.let { return it }
         try {
             val interfaces = Collections.list(NetworkInterface.getNetworkInterfaces())
             for (intf in interfaces) {

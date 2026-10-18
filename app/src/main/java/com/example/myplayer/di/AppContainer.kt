@@ -74,7 +74,7 @@ object AppContainer {
         val musicRepository = MusicRepository(songRepository, playlistRepository, favoriteRepository, recentHistoryRepository)
         register(MusicRepository::class.java, musicRepository)
 
-        val downloadRepository = DownloadRepository(appContext, db.downloadedSongDao(), db.songDao(), db.cachedLyricsDao())
+        val downloadRepository = DownloadRepository(appContext, db.downloadedSongDao(), db.songDao(), db.cachedLyricsDao(), okHttpClient)
         register(DownloadRepository::class.java, downloadRepository)
 
         val losslessResolver = LosslessStreamResolver(okHttpClient)
@@ -257,6 +257,11 @@ object AppContainer {
 
     fun cleanup() {
         println("[AppContainer] Cleaning up desktop dependencies...")
+        try {
+            resolveDependency(com.example.myplayer.dualbud.DualChannelPlaybackManager::class.java)?.let {
+                (it as? com.example.myplayer.dualbud.DualChannelPlaybackManager)?.disableDualBudMode()
+            }
+        } catch (_: Throwable) {}
         try {
             DesktopAudioBackend.release()
         } catch (_: Throwable) {}

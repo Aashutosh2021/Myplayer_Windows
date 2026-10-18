@@ -9,6 +9,7 @@ activityCompose = "1.13.0"
 kotlin = "2.1.0"
 composeMultiplatform = "1.7.3"
 vlcj = "4.8.3"
+jmdns = "3.5.9"
 sqliteJdbc = "3.47.2.0"
 coil3 = "3.0.4"
 navigationComposeKmp = "2.8.0-alpha10"
@@ -86,6 +87,7 @@ androidx-annotation = { group = "androidx.annotation", name = "annotation", vers
 
 # Desktop Audio & Persistence
 vlcj = { group = "uk.co.caprica", name = "vlcj", version.ref = "vlcj" }
+jmdns = { group = "org.jmdns", name = "jmdns", version.ref = "jmdns" }
 sqlite-jdbc = { group = "org.xerial", name = "sqlite-jdbc", version.ref = "sqliteJdbc" }
 coil3-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil3" }
 coil3-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil3" }

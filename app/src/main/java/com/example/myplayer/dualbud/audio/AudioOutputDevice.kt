@@ -22,8 +22,10 @@ interface AudioOutputDevice {
 }
 
 /**
- * Real Android [AudioTrack] output device for hardware/Bluetooth playback.
- * Outputs standard interleaved stereo 16-bit PCM at 48,000 Hz.
+ * Hardware [AudioTrack] / Desktop JavaSound `SourceDataLine` output device for stereo PCM playback.
+ * Outputs standard interleaved stereo 16-bit PCM at 48,000 Hz where:
+ * - Even indices (0, 2, 4, ...) drive the physical LEFT earbud
+ * - Odd indices (1, 3, 5, ...) drive the physical RIGHT earbud
  */
 class AndroidAudioTrackOutput(
     override val sampleRate: Int = 48000
@@ -33,6 +35,7 @@ class AndroidAudioTrackOutput(
     private var audioTrack: AudioTrack? = null
 
     override fun open(bufferSizeFrames: Int) {
+        release()
         val minBufferSize = AudioTrack.getMinBufferSize(
             sampleRate,
             AudioFormat.CHANNEL_OUT_STEREO,
@@ -67,33 +70,26 @@ class AndroidAudioTrackOutput(
     override fun play() {
         try {
             audioTrack?.play()
-        } catch (e: Exception) {
-            // Non-fatal if track not ready
-        }
+        } catch (_: Exception) {}
     }
 
     override fun pause() {
         try {
             audioTrack?.pause()
-        } catch (e: Exception) {
-            // Non-fatal
-        }
+        } catch (_: Exception) {}
     }
 
     override fun flush() {
         try {
             audioTrack?.flush()
-        } catch (e: Exception) {
-            // Non-fatal
-        }
+        } catch (_: Exception) {}
     }
 
     override fun release() {
         try {
             audioTrack?.stop()
             audioTrack?.release()
-        } catch (e: Exception) {
-            // Non-fatal
+        } catch (_: Exception) {
         } finally {
             audioTrack = null
         }
@@ -105,7 +101,7 @@ class AndroidAudioTrackOutput(
 }
 
 /**
- * In-memory [AudioOutputDevice] implementation for testing without Android hardware.
+ * In-memory [AudioOutputDevice] implementation for testing without audio hardware.
  * Records written stereo frames and enables precise verification of channel isolation,
  * volume attenuation, clipping prevention, and swap routing.
  */

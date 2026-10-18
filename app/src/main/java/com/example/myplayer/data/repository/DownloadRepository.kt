@@ -2,20 +2,19 @@ package com.example.myplayer.data.repository
 
 import android.content.Context
 import android.util.Log
-import androidx.work.*
-import com.example.myplayer.data.download.DownloadWorker
+import com.example.myplayer.data.local.dao.CachedLyricsDao
 import com.example.myplayer.data.local.dao.DownloadedSongDao
 import com.example.myplayer.data.local.dao.SongDao
-import com.example.myplayer.data.local.dao.CachedLyricsDao
 import com.example.myplayer.data.local.entity.DownloadedSongEntity
 import com.example.myplayer.data.online.model.OnlineSong
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.io.File
+import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -24,51 +23,14 @@ class DownloadRepository @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val downloadedSongDao: DownloadedSongDao,
     private val songDao: SongDao,
-    private val cachedLyricsDao: CachedLyricsDao
+    private val cachedLyricsDao: CachedLyricsDao,
+    private val okHttpClient: OkHttpClient = OkHttpClient()
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val _manualProgress = MutableStateFlow<Map<String, Int>>(emptyMap())
+    private val activeJobs = ConcurrentHashMap<String, Job>()
 
-    private val workManagerFlow: Flow<List<WorkInfo>> = flow {
-        try {
-            emitAll(WorkManager.getInstance(context).getWorkInfosByTagFlow("download"))
-        } catch (e: Exception) {
-            Log.w("DownloadRepository", "Could not observe WorkManager download tag flow", e)
-            emit(emptyList())
-        }
-    }
-
-    val downloadProgress: StateFlow<Map<String, Int>> = combine(
-        workManagerFlow,
-        _manualProgress
-    ) { workInfos, manual ->
-        val terminalIds = workInfos
-            .filter { it.state.isFinished }
-            .mapNotNull { info ->
-                info.tags.firstOrNull { it.startsWith("videoId_") }?.removePrefix("videoId_")
-            }
-            .toSet()
-
-        if (terminalIds.isNotEmpty()) {
-            _manualProgress.update { current -> current - terminalIds }
-        }
-
-        val activeMap = workInfos
-            .filter { info ->
-                info.state == WorkInfo.State.ENQUEUED ||
-                info.state == WorkInfo.State.RUNNING ||
-                info.state == WorkInfo.State.BLOCKED
-            }
-            .mapNotNull { info ->
-                val videoId = info.tags.firstOrNull { it.startsWith("videoId_") }
-                    ?.removePrefix("videoId_")
-                    ?: return@mapNotNull null
-                val prog = info.progress.getInt(DownloadWorker.KEY_PROGRESS, 0)
-                videoId to prog
-            }
-            .toMap()
-        (manual - terminalIds) + activeMap
-    }.stateIn(scope, SharingStarted.Eagerly, emptyMap())
+    val downloadProgress: StateFlow<Map<String, Int>> = _manualProgress.asStateFlow()
 
     fun setDownloadProgress(videoId: String, progress: Int) {
         _manualProgress.update { it + (videoId to progress) }
@@ -91,11 +53,6 @@ class DownloadRepository @Inject constructor(
     fun getDownloadedById(id: String): Flow<List<DownloadedSongEntity>> =
         downloadedSongDao.searchDownloads("")
 
-    /**
-     * Schedules an expedited background download for the given [song].
-     * Uses WorkManager's Expedited Jobs to ensure the download starts immediately,
-     * bypassing background execution limits even if notifications are suppressed.
-     */
     fun startDownload(song: OnlineSong): Boolean {
         val streamUrl = song.streamUrl
         if (streamUrl.isNullOrBlank()) {
@@ -103,41 +60,168 @@ class DownloadRepository @Inject constructor(
             return false
         }
 
-        Log.i("DownloadRepository", "[DOWNLOAD] Scheduling expedited download for: ${song.title} (${song.videoId})")
+        if (activeJobs.containsKey(song.videoId)) {
+            Log.i("DownloadRepository", "[DOWNLOAD] Already downloading ${song.videoId}")
+            return true
+        }
+
+        Log.i("DownloadRepository", "[DOWNLOAD] Starting desktop download for: ${song.title} (${song.videoId})")
         setDownloadProgress(song.videoId, 0)
 
-        val data = workDataOf(
-            DownloadWorker.KEY_VIDEO_ID to song.videoId,
-            DownloadWorker.KEY_TITLE to song.title,
-            DownloadWorker.KEY_ARTIST to song.artist,
-            DownloadWorker.KEY_THUMBNAIL_URL to song.thumbnailUrl,
-            DownloadWorker.KEY_DURATION_MS to song.durationMs,
-            DownloadWorker.KEY_STREAM_URL to streamUrl
-        )
+        val job = scope.launch {
+            var tempFileToClean: File? = null
+            try {
+                val musicDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_MUSIC) ?: context.filesDir
+                musicDir.mkdirs()
 
-        val request = OneTimeWorkRequestBuilder<DownloadWorker>()
-            .setInputData(data)
-            .addTag("download")
-            .addTag("videoId_${song.videoId}")
-            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-            .build()
+                val safeTitle = song.title
+                    .replace(Regex("[^a-zA-Z0-9 _\\-]"), "")
+                    .replace(Regex(" {2,}"), " ")
+                    .trim()
+                    .take(60)
+                    .ifBlank { song.videoId }
 
-        return try {
-            WorkManager.getInstance(context).enqueueUniqueWork(
-                "download_${song.videoId}",
-                ExistingWorkPolicy.KEEP,   // Don't cancel a running download if same song is enqueued again
-                request
-            )
-            Log.i("DownloadRepository", "[DOWNLOAD] Successfully enqueued WorkManager job for: ${song.videoId}")
-            true
-        } catch (e: Exception) {
-            Log.e("DownloadRepository", "[DOWNLOAD] Failed to enqueue WorkManager job for ${song.videoId}", e)
-            removeDownload(song.videoId)
-            false
+                val finalFileName = "$safeTitle.m4a"
+                val tmpFileName = "$safeTitle.tmp"
+                val destFile = File(musicDir, finalFileName)
+                val tempFile = File(musicDir, tmpFileName)
+                tempFileToClean = tempFile
+
+                val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                val chunkSize = 10L * 1024 * 1024
+
+                var totalSize = -1L
+                try {
+                    val headReq = Request.Builder()
+                        .url(streamUrl)
+                        .addHeader("User-Agent", userAgent)
+                        .addHeader("Range", "bytes=0-0")
+                        .build()
+                    okHttpClient.newCall(headReq).execute().use { response ->
+                        val cr = response.header("Content-Range")
+                        if (cr != null) {
+                            totalSize = cr.substringAfterLast("/").toLongOrNull() ?: -1L
+                        } else if (response.isSuccessful) {
+                            totalSize = response.body?.contentLength() ?: -1L
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w("DownloadRepository", "Could not probe size for ${song.videoId}: ${e.message}")
+                }
+
+                tempFile.outputStream().use { out ->
+                    var downloaded = 0L
+                    if (totalSize > 0) {
+                        while (downloaded < totalSize) {
+                            if (!isActive) throw CancellationException("Download cancelled")
+                            val endOffset = minOf(downloaded + chunkSize - 1, totalSize - 1)
+                            val req = Request.Builder()
+                                .url(streamUrl)
+                                .addHeader("User-Agent", userAgent)
+                                .addHeader("Range", "bytes=$downloaded-$endOffset")
+                                .build()
+
+                            val bytesReadThisChunk = okHttpClient.newCall(req).execute().use { response ->
+                                if (response.code == 416) return@use -1L
+                                if (!response.isSuccessful && response.code != 206) {
+                                    throw IOException("HTTP ${response.code}")
+                                }
+                                val body = response.body ?: throw IOException("Empty body")
+                                val stream = body.byteStream()
+                                val buf = ByteArray(16384)
+                                var chunkBytes = 0L
+                                while (true) {
+                                    if (!isActive) throw CancellationException("Download cancelled")
+                                    val r = stream.read(buf)
+                                    if (r == -1) break
+                                    out.write(buf, 0, r)
+                                    chunkBytes += r
+                                }
+                                chunkBytes
+                            }
+
+                            if (bytesReadThisChunk <= 0L) break
+                            downloaded += bytesReadThisChunk
+                            val prog = ((downloaded.toFloat() / totalSize) * 100).toInt().coerceIn(0, 99)
+                            setDownloadProgress(song.videoId, prog)
+                        }
+                    } else {
+                        val req = Request.Builder()
+                            .url(streamUrl)
+                            .addHeader("User-Agent", userAgent)
+                            .build()
+                        okHttpClient.newCall(req).execute().use { response ->
+                            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+                            val body = response.body ?: throw IOException("Empty body")
+                            val stream = body.byteStream()
+                            val len = body.contentLength()
+                            val buf = ByteArray(16384)
+                            while (true) {
+                                if (!isActive) throw CancellationException("Download cancelled")
+                                val r = stream.read(buf)
+                                if (r == -1) break
+                                out.write(buf, 0, r)
+                                downloaded += r
+                                if (len > 0) {
+                                    val prog = ((downloaded.toFloat() / len) * 100).toInt().coerceIn(0, 99)
+                                    setDownloadProgress(song.videoId, prog)
+                                } else {
+                                    setDownloadProgress(song.videoId, 50)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                val fileSize = tempFile.length()
+                if (fileSize <= 0L) {
+                    throw IOException("Downloaded file is empty")
+                }
+
+                if (destFile.exists()) destFile.delete()
+                if (!tempFile.renameTo(destFile)) {
+                    tempFile.copyTo(destFile, overwrite = true)
+                    tempFile.delete()
+                }
+
+                val entity = DownloadedSongEntity(
+                    id = song.videoId,
+                    title = song.title,
+                    artist = song.artist,
+                    thumbnailUrl = song.thumbnailUrl,
+                    durationMs = song.durationMs,
+                    localPath = destFile.absolutePath,
+                    fileSizeBytes = fileSize,
+                    downloadedAt = System.currentTimeMillis()
+                )
+                downloadedSongDao.insert(entity)
+
+                try {
+                    songDao.getSongById(song.videoId)?.let {
+                        songDao.updateSongPath(song.videoId, destFile.absolutePath)
+                    }
+                } catch (_: Exception) {}
+
+                Log.i("DownloadRepository", "[DOWNLOAD] Completed successfully: ${song.title}")
+            } catch (e: Exception) {
+                Log.e("DownloadRepository", "[DOWNLOAD] Failed for ${song.videoId}: ${e.message}")
+            } finally {
+                activeJobs.remove(song.videoId)
+                removeDownload(song.videoId)
+                try {
+                    tempFileToClean?.let {
+                        if (it.exists()) it.delete()
+                    }
+                } catch (_: Exception) {}
+            }
         }
+        activeJobs[song.videoId] = job
+        return true
     }
 
     suspend fun deleteDownload(entity: DownloadedSongEntity) {
+        activeJobs.remove(entity.id)?.cancel()
+        removeDownload(entity.id)
         try {
             if (entity.localPath.startsWith("content://")) {
                 val uri = android.net.Uri.parse(entity.localPath)
@@ -151,7 +235,6 @@ class DownloadRepository @Inject constructor(
             Log.e("DownloadRepository", "Could not delete file", e)
         }
 
-        // Delete cached lyrics
         try {
             cachedLyricsDao.deleteLyricsForSong(entity.id)
         } catch (e: Exception) {
@@ -159,17 +242,11 @@ class DownloadRepository @Inject constructor(
         }
 
         downloadedSongDao.deleteById(entity.id)
-        removeDownload(entity.id)
-        Log.i("DownloadRepository", "Deleted download record for ${entity.id}. PlaybackSourceResolver will route online on next play.")
+        Log.i("DownloadRepository", "Deleted download record for ${entity.id}")
     }
 
     suspend fun deleteDownloadById(videoId: String) = withContext(Dispatchers.IO) {
-        try {
-            WorkManager.getInstance(context).cancelUniqueWork("download_$videoId")
-        } catch (e: Exception) {
-            Log.e("DownloadRepository", "Could not cancel WorkManager download task for $videoId", e)
-        }
-
+        activeJobs.remove(videoId)?.cancel()
         removeDownload(videoId)
 
         val entity = downloadedSongDao.getById(videoId)
@@ -200,36 +277,16 @@ class DownloadRepository @Inject constructor(
 
             for (download in downloads) {
                 val path = download.localPath
-                // 1. Check duplicate file path entries
                 if (path in seenFilePaths) {
-                    Log.w("DownloadRepository", "Duplicate path entry detected for ${download.title}. Removing database record.")
                     toDelete.add(download.id)
                     continue
                 }
                 seenFilePaths.add(path)
 
-                // 2. Exclude songs that are currently enqueued or actively downloading in WorkManager
-                val workInfos: List<WorkInfo> = try {
-                    WorkManager.getInstance(context).getWorkInfosForUniqueWork("download_${download.id}").get()
-                } catch (e: Exception) {
-                    emptyList()
-                }
-                
-                var isDownloading = false
-                for (info in workInfos) {
-                    if (info.state == WorkInfo.State.ENQUEUED || 
-                        info.state == WorkInfo.State.RUNNING || 
-                        info.state == WorkInfo.State.BLOCKED) {
-                        isDownloading = true
-                        break
-                    }
-                }
-
-                if (isDownloading) {
+                if (activeJobs.containsKey(download.id) || isDownloading(download.id)) {
                     continue
                 }
 
-                // 3. Verify file exists and is not empty (corrupted/missing)
                 val fileExists = try {
                     if (path.startsWith("content://") || path.startsWith("file://")) {
                         val uri = android.net.Uri.parse(path)
@@ -245,7 +302,6 @@ class DownloadRepository @Inject constructor(
                 }
 
                 if (!fileExists) {
-                    Log.w("DownloadRepository", "Integrity check failed: file missing or empty for ${download.title} at $path. Removing database record.")
                     toDelete.add(download.id)
                 }
             }
@@ -253,12 +309,8 @@ class DownloadRepository @Inject constructor(
             if (toDelete.isNotEmpty()) {
                 for (id in toDelete) {
                     downloadedSongDao.deleteById(id)
-                    // NOTE: We intentionally do NOT reset SongEntity.path to "online://" here.
-                    // PlaybackSourceResolver handles routing correctly when downloaded_songs record is absent.
                 }
-                Log.i("DownloadRepository", "Integrity check completed. Cleaned up ${toDelete.size} stale/invalid download records.")
-            } else {
-                Log.i("DownloadRepository", "Integrity check completed successfully. All records valid.")
+                Log.i("DownloadRepository", "Cleaned up ${toDelete.size} invalid download records.")
             }
         }
     }

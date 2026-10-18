@@ -84,93 +84,84 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
     val hideNavRoutes = setOf(Screen.NowPlaying.route, Screen.DualBud.route, Screen.SyncPlay.route, "playlist_detail/{playlistId}")
     val showNav = currentRoute != null && !hideNavRoutes.any { currentRoute.startsWith(it.split("{")[0]) }
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        containerColor = CloudBlueBackground,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        bottomBar = {
-            if (showNav) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(androidx.compose.ui.graphics.Color.Transparent),
-                    verticalArrangement = Arrangement.Bottom
-                ) {
-                    // Mini player above nav bar
-                    AnimatedVisibility(
-                        visible = hasAnySong,
-                        enter = slideInVertically(
-                            initialOffsetY = { it },
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioLowBouncy,
-                                stiffness = Spring.StiffnessMediumLow
-                            )
-                        ) + scaleIn(initialScale = 0.88f) + fadeIn(),
-                        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
-                    ) {
-                        // Memoize synthetic SongEntity: only rebuild when the online song reference
-                        // changes, not on every isPlaying / any-state recomposition.
-                        val miniSong = currentSong?.let {
-                            if (it.albumArt.isNullOrBlank() && !displayArt.isNullOrBlank()) {
-                                it.copy(albumArt = displayArt)
-                            } else {
-                                it
-                            }
-                        } ?: remember(currentOnlineSong, displayArt) {
-                            com.example.myplayer.data.local.entity.SongEntity(
-                                id = currentOnlineSong?.videoId ?: "",
-                                title = displayTitle ?: "",
-                                artist = displayArtist ?: "",
-                                album = "",
-                                duration = 0,
-                                path = displayArt ?: "",
-                                albumArt = displayArt,
-                                dateAdded = 0
-                            )
-                        }
-                        MiniPlayer(
-                            song = miniSong,
-                            isPlaying = isPlaying,
-                            onPlayPauseClick = remember(viewModel) { { viewModel.playPause() } },
-                            onNextClick = remember(viewModel) { { viewModel.skipToNext() } },
-                            onPreviousClick = remember(viewModel) { { viewModel.skipToPrevious() } },
-                            onPlayerClick = remember(navController) {
-                                {
-                                    navController.navigate(Screen.NowPlaying.route) { launchSingleTop = true }
+    Row(modifier = Modifier.fillMaxSize()) {
+        if (showNav) {
+            FloatingNavBar(
+                currentRoute = currentRoute,
+                onNavigate = { route ->
+                    if (route == currentRoute) return@FloatingNavBar
+                    if (route == Screen.Home.route) {
+                        val popped = navController.popBackStack(Screen.Home.route, inclusive = false)
+                        if (!popped) {
+                            navController.navigate(Screen.Home.route) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    inclusive = false
                                 }
+                                launchSingleTop = true
                             }
+                        }
+                    } else {
+                        navController.navigate(route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                }
+            )
+        }
+
+        Scaffold(
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+            containerColor = CloudBlueBackground,
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            bottomBar = {
+                AnimatedVisibility(
+                    visible = hasAnySong && !isOnNowPlaying,
+                    enter = slideInVertically(
+                        initialOffsetY = { it },
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioLowBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        )
+                    ) + scaleIn(initialScale = 0.88f) + fadeIn(),
+                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+                ) {
+                    val miniSong = currentSong?.let {
+                        if (it.albumArt.isNullOrBlank() && !displayArt.isNullOrBlank()) {
+                            it.copy(albumArt = displayArt)
+                        } else {
+                            it
+                        }
+                    } ?: remember(currentOnlineSong, displayArt) {
+                        com.example.myplayer.data.local.entity.SongEntity(
+                            id = currentOnlineSong?.videoId ?: "",
+                            title = displayTitle ?: "",
+                            artist = displayArtist ?: "",
+                            album = "",
+                            duration = 0,
+                            path = displayArt ?: "",
+                            albumArt = displayArt,
+                            dateAdded = 0
                         )
                     }
-
-                    FloatingNavBar(
-                        currentRoute = currentRoute,
-                        onNavigate = { route ->
-                            if (route == currentRoute) return@FloatingNavBar
-                            if (route == Screen.Home.route) {
-                                val popped = navController.popBackStack(Screen.Home.route, inclusive = false)
-                                if (!popped) {
-                                    navController.navigate(Screen.Home.route) {
-                                        popUpTo(navController.graph.findStartDestination().id) {
-                                            inclusive = false
-                                        }
-                                        launchSingleTop = true
-                                    }
-                                }
-                            } else {
-                                navController.navigate(route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
+                    MiniPlayer(
+                        song = miniSong,
+                        isPlaying = isPlaying,
+                        onPlayPauseClick = remember(viewModel) { { viewModel.playPause() } },
+                        onNextClick = remember(viewModel) { { viewModel.skipToNext() } },
+                        onPreviousClick = remember(viewModel) { { viewModel.skipToPrevious() } },
+                        onPlayerClick = remember(navController) {
+                            {
+                                navController.navigate(Screen.NowPlaying.route) { launchSingleTop = true }
                             }
                         }
                     )
                 }
             }
-        }
-    ) { innerPadding ->
+        ) { innerPadding ->
         NavHost(
             navController = navController,
             startDestination = Screen.Home.route,
@@ -362,5 +353,7 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
         }
     }
 }
+}
+
 
 

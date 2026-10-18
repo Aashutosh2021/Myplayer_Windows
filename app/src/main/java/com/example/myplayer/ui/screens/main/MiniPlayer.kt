@@ -56,18 +56,18 @@ fun MiniPlayer(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .shadow(
-                    elevation = 16.dp,
-                    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomStart = 16.dp, bottomEnd = 16.dp),
+                    elevation = 12.dp,
+                    shape = RoundedCornerShape(16.dp),
                     spotColor = Color.Black
                 )
-                .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomStart = 16.dp, bottomEnd = 16.dp))
-                .background(PureBlack)
+                .clip(RoundedCornerShape(16.dp))
+                .background(if (ThemeManager.isDark) Color(0xFF1E2532) else Color(0xFF000000))
                 .graphicsLayer {
                     translationX = animatedOffsetX * 0.35f
                     rotationZ = (animatedOffsetX / 60f).coerceIn(-3f, 3f)
@@ -93,7 +93,7 @@ fun MiniPlayer(
                     indication = null,
                     onClick = onPlayerClick
                 )
-                .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 30.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Squircle Album Art
@@ -130,7 +130,7 @@ fun MiniPlayer(
                     Text(
                         text = title,
                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                        color = PureWhite,
+                        color = Color.White,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -138,7 +138,7 @@ fun MiniPlayer(
                     Text(
                         text = if (artist.isBlank() || artist == "Unknown") "Unknown Artist" else artist,
                         style = MaterialTheme.typography.bodySmall,
-                        color = SilverMuted,
+                        color = Color(0xFFA4AAB7),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -152,7 +152,7 @@ fun MiniPlayer(
                 modifier = Modifier
                     .size(42.dp)
                     .clip(CircleShape)
-                    .background(PureWhite)
+                    .background(Color.White)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -163,7 +163,7 @@ fun MiniPlayer(
                 Icon(
                     imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                     contentDescription = if (isPlaying) "Pause" else "Play",
-                    tint = PureBlack,
+                    tint = Color.Black,
                     modifier = Modifier.size(24.dp)
                 )
             }

@@ -2,6 +2,7 @@ package com.example.myplayer.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -17,10 +18,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.myplayer.R
 import com.example.myplayer.ui.navigation.Screen
 import com.example.myplayer.ui.theme.*
 
@@ -45,19 +49,34 @@ fun FloatingNavBar(
     onNavigate: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Pure White curved bottom dock that overlaps the bottom of the dark MiniPlayer
-    Row(
+    Column(
         modifier = modifier
-            .fillMaxWidth()
-            .offset(y = (-14).dp)
-            .shadow(elevation = 16.dp, shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp), spotColor = CharcoalPrimary.copy(alpha = 0.12f))
-            .clip(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
+            .width(210.dp)
+            .fillMaxHeight()
+            .shadow(elevation = 6.dp, spotColor = CharcoalPrimary.copy(alpha = 0.08f))
             .background(PureWhite)
-            .navigationBarsPadding()
-            .padding(top = 12.dp, bottom = 10.dp, start = 12.dp, end = 12.dp),
-        horizontalArrangement = Arrangement.SpaceAround,
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 14.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.Top
     ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(start = 8.dp, bottom = 28.dp, top = 4.dp)
+        ) {
+            Image(
+                painter = painterResource(R.drawable.app_icon_spark),
+                contentDescription = "MyPlayer Logo",
+                modifier = Modifier.size(34.dp)
+            )
+            Text(
+                text = "MYPLAYER",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp,
+                color = CharcoalPrimary
+            )
+        }
+
         bottomNavItems.forEach { item ->
             val isSelected = currentRoute == item.route
             val tint by animateColorAsState(
@@ -65,32 +84,66 @@ fun FloatingNavBar(
                 animationSpec = tween(180),
                 label = "navTint_${item.route}"
             )
+            val bg = if (isSelected) CloudBlueBackground else Color.Transparent
 
-            Column(
+            Row(
                 modifier = Modifier
-                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(vertical = 3.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(bg)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
                         onClick = { onNavigate(item.route) }
                     )
-                    .padding(vertical = 2.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .padding(horizontal = 14.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Icon(
                     imageVector = if (isSelected) item.activeIcon else item.inactiveIcon,
                     contentDescription = item.label,
                     tint = tint,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(22.dp)
                 )
-                Spacer(Modifier.height(4.dp))
                 Text(
                     text = item.label,
-                    fontSize = 11.sp,
+                    fontSize = 14.sp,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                     color = tint
                 )
             }
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(if (ThemeManager.isDark) Color(0xFF1F2532) else SoftGraySurface)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = { ThemeManager.toggle() }
+                )
+                .padding(horizontal = 14.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = if (ThemeManager.isDark) Icons.Filled.DarkMode else Icons.Filled.LightMode,
+                contentDescription = "Toggle Day / Night",
+                tint = CharcoalPrimary,
+                modifier = Modifier.size(22.dp)
+            )
+            Text(
+                text = if (ThemeManager.isDark) "Night Mode" else "Day Mode",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = CharcoalPrimary
+            )
         }
     }
 }

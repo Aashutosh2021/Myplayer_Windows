@@ -174,6 +174,14 @@ class DualChannelPlaybackTest {
         mixer.mixChunk()
         assertEquals(0.toShort(), testDevice.getLeftChannelSamples()[0])
         assertEquals(800.toShort(), testDevice.getRightChannelSamples()[0])
+        assertEquals(0L, mixer.leftFramesConsumed.get())
+
+        // Resume left and verify consumption advances seamlessly without resetting
+        testDevice.flush()
+        mixer.isLeftPlaying = true
+        mixer.mixChunk()
+        assertEquals(500.toShort(), testDevice.getLeftChannelSamples()[0])
+        assertTrue(mixer.leftFramesConsumed.get() > 0L)
     }
 
     // ── Test 9: Pause right only ─────────────────────────────────────────────

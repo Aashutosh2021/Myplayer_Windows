@@ -1,5 +1,9 @@
 package com.example.myplayer.playback
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import uk.co.caprica.vlcj.factory.MediaPlayerFactory
 import uk.co.caprica.vlcj.factory.discovery.NativeDiscovery
 import uk.co.caprica.vlcj.player.base.MediaPlayer
@@ -8,12 +12,18 @@ import java.io.File
 
 object DesktopAudioBackend {
     private var mediaPlayer: MediaPlayer? = null
+    private var mediaPlayerFactory: MediaPlayerFactory? = null
     var isVlcAvailable: Boolean = false
         private set
 
+    private val backendScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     private var onCompletionCallback: (() -> Unit)? = null
     private var onPlayingChangedCallback: ((Boolean) -> Unit)? = null
-    private var currentPath: String? = null
+    var currentPath: String? = null
+        private set
+    var isPaused: Boolean = false
+        private set
     private var simulatedStartTime: Long = 0L
     private var simulatedPauseTime: Long = 0L
     private var isSimulatedPlaying: Boolean = false
@@ -26,22 +36,42 @@ object DesktopAudioBackend {
             }
             NativeDiscovery().discover()
             val factory = MediaPlayerFactory("--no-video", "--quiet")
+            mediaPlayerFactory = factory
             val player = factory.mediaPlayers().newMediaPlayer()
             player.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
                 override fun finished(mediaPlayer: MediaPlayer?) {
-                    onCompletionCallback?.invoke()
+                    isPaused = false
+                    backendScope.launch {
+                        onCompletionCallback?.invoke()
+                    }
                 }
 
                 override fun playing(mediaPlayer: MediaPlayer?) {
-                    onPlayingChangedCallback?.invoke(true)
+                    isPaused = false
+                    backendScope.launch {
+                        onPlayingChangedCallback?.invoke(true)
+                    }
                 }
 
                 override fun paused(mediaPlayer: MediaPlayer?) {
-                    onPlayingChangedCallback?.invoke(false)
+                    isPaused = true
+                    backendScope.launch {
+                        onPlayingChangedCallback?.invoke(false)
+                    }
                 }
 
                 override fun stopped(mediaPlayer: MediaPlayer?) {
-                    onPlayingChangedCallback?.invoke(false)
+                    isPaused = false
+                    backendScope.launch {
+                        onPlayingChangedCallback?.invoke(false)
+                    }
+                }
+
+                override fun error(mediaPlayer: MediaPlayer?) {
+                    isPaused = false
+                    backendScope.launch {
+                        onPlayingChangedCallback?.invoke(false)
+                    }
                 }
             })
             mediaPlayer = player
@@ -54,14 +84,19 @@ object DesktopAudioBackend {
     }
 
     fun play(pathOrUri: String, startPositionMs: Long = 0L) {
-        currentPath = pathOrUri
+        val cleanPath = when {
+            pathOrUri.startsWith("file://") -> pathOrUri.removePrefix("file://")
+            pathOrUri.startsWith("file:/") -> pathOrUri.removePrefix("file:")
+            else -> pathOrUri
+        }
+        if (cleanPath == currentPath && isPaused && startPositionMs <= 0L) {
+            resume()
+            return
+        }
+        currentPath = cleanPath
+        isPaused = false
         if (isVlcAvailable && mediaPlayer != null) {
             try {
-                val cleanPath = when {
-                    pathOrUri.startsWith("file://") -> pathOrUri.removePrefix("file://")
-                    pathOrUri.startsWith("file:/") -> pathOrUri.removePrefix("file:")
-                    else -> pathOrUri
-                }
                 mediaPlayer?.media()?.play(cleanPath)
                 if (startPositionMs > 0L) {
                     mediaPlayer?.controls()?.setTime(startPositionMs)
@@ -78,6 +113,7 @@ object DesktopAudioBackend {
     }
 
     fun pause() {
+        isPaused = true
         if (isVlcAvailable && mediaPlayer != null) {
             try {
                 mediaPlayer?.controls()?.pause()
@@ -94,6 +130,7 @@ object DesktopAudioBackend {
     }
 
     fun resume() {
+        isPaused = false
         if (isVlcAvailable && mediaPlayer != null) {
             try {
                 mediaPlayer?.controls()?.play()
@@ -111,6 +148,8 @@ object DesktopAudioBackend {
     }
 
     fun stop() {
+        isPaused = false
+        currentPath = null
         if (isVlcAvailable && mediaPlayer != null) {
             try {
                 mediaPlayer?.controls()?.stop()
@@ -121,13 +160,19 @@ object DesktopAudioBackend {
     }
 
     fun seekTo(positionMs: Long) {
+        val validPos = positionMs.coerceAtLeast(0L)
         if (isVlcAvailable && mediaPlayer != null) {
             try {
-                mediaPlayer?.controls()?.setTime(positionMs)
+                mediaPlayer?.controls()?.setTime(validPos)
                 return
             } catch (_: Exception) {}
         }
-        simulatedStartTime = System.currentTimeMillis() - positionMs
+        if (isSimulatedPlaying) {
+            simulatedStartTime = System.currentTimeMillis() - validPos
+        } else {
+            simulatedPauseTime = System.currentTimeMillis()
+            simulatedStartTime = simulatedPauseTime - validPos
+        }
     }
 
     fun setVolume(volume: Float) {
@@ -182,8 +227,19 @@ object DesktopAudioBackend {
 
     fun release() {
         try {
-            mediaPlayer?.release()
-        } catch (_: Exception) {}
-        mediaPlayer = null
+            val player = mediaPlayer
+            val factory = mediaPlayerFactory
+            mediaPlayer = null
+            mediaPlayerFactory = null
+            backendScope.launch(Dispatchers.IO) {
+                try {
+                    player?.controls()?.stop()
+                    player?.release()
+                } catch (_: Throwable) {}
+                try {
+                    factory?.release()
+                } catch (_: Throwable) {}
+            }
+        } catch (_: Throwable) {}
     }
 }

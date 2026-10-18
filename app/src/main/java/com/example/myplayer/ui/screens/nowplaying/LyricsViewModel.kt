@@ -72,6 +72,8 @@ class LyricsViewModel @Inject constructor(
 
     private var lastMetadata: LyricsMetadata? = null
 
+    fun retryFetch() = retryLyrics()
+
     fun retryLyrics() {
         val currentMeta = lastMetadata ?: run {
             val local = musicController.currentSong.value

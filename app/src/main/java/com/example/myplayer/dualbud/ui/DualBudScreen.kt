@@ -66,6 +66,12 @@ fun DualBudScreen(
         }
     }
 
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.disableDualBudMode()
+        }
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {

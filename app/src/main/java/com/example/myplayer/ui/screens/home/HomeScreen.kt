@@ -159,15 +159,6 @@ fun HomeScreen(
                     )
                     Column {
                         Text(
-                            text = "MYPLAYER",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp
-                            ),
-                            color = MaterialTheme.colorScheme.secondary,
-                            fontSize = 10.sp
-                        )
-                        Text(
                             text = "Home",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.primary

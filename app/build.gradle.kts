@@ -26,10 +26,11 @@ tasks.withType<Copy> {
 compose.desktop {
     application {
         mainClass = "com.example.myplayer.MainKt"
+        javaHome = "C:/Program Files/Microsoft/jdk-21.0.10.7-hotspot"
         nativeDistributions {
             targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe)
             packageName = "MyPlayer"
-            packageVersion = "4.0.0"
+            packageVersion = "1.0.0"
             modules(
                 "java.base",
                 "java.desktop",
@@ -74,8 +75,9 @@ dependencies {
     implementation(libs.coroutines.swing)
 
 
-    // Audio Engine: VLCJ
+    // Audio Engine: VLCJ & mDNS Auto-Discovery: JmDNS
     implementation(libs.vlcj)
+    implementation(libs.jmdns)
 
     // Persistence: SQLite JDBC & DataStore
     implementation(libs.sqlite.jdbc)

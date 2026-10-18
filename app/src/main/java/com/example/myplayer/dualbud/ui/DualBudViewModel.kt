@@ -191,4 +191,9 @@ class DualBudViewModel @Inject constructor(
     fun swapChannels() {
         manager.swapChannels()
     }
+
+    override fun onCleared() {
+        super.onCleared()
+        manager.disableDualBudMode()
+    }
 }

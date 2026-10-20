@@ -72,6 +72,22 @@ class MusicController @Inject constructor(
     private val _playbackQueue = MutableStateFlow<List<SongEntity>>(emptyList())
     val playbackQueue: StateFlow<List<SongEntity>> = _playbackQueue.asStateFlow()
 
+    private val _playbackSourceContext = MutableStateFlow(PlaybackSourceContext.RECOMMENDED)
+    val playbackSourceContext: StateFlow<PlaybackSourceContext> = _playbackSourceContext.asStateFlow()
+
+    private val _contextTitle = MutableStateFlow("Recommended")
+    val contextTitle: StateFlow<String> = _contextTitle.asStateFlow()
+
+    fun setPlaybackSourceContext(context: PlaybackSourceContext, title: String = "") {
+        _playbackSourceContext.value = context
+        _contextTitle.value = if (title.isNotBlank()) title else when (context) {
+            PlaybackSourceContext.RECOMMENDED -> "Recommended"
+            PlaybackSourceContext.DOWNLOADS -> "Downloaded songs"
+            PlaybackSourceContext.PLAYLIST -> "Playlist songs"
+            PlaybackSourceContext.QUEUE -> "Queue"
+        }
+    }
+
     @Volatile var syncPlaybackInterceptor: SyncPlaybackInterceptor? = null
 
     // Playback history stack (Phase R9/R10)
@@ -848,9 +864,16 @@ class MusicController @Inject constructor(
      */
     fun playSong(song: PlayableSong) {
         when (song) {
-            is PlayableSong.Local -> playSongs(listOf(song.entity), 0)
-            is PlayableSong.Downloaded -> playDownloadedSong(song.entity)
+            is PlayableSong.Local -> {
+                setPlaybackSourceContext(PlaybackSourceContext.RECOMMENDED, "Recommended")
+                playSongs(listOf(song.entity), 0)
+            }
+            is PlayableSong.Downloaded -> {
+                setPlaybackSourceContext(PlaybackSourceContext.DOWNLOADS, "Downloaded songs")
+                playDownloadedSong(song.entity)
+            }
             is PlayableSong.Online -> {
+                setPlaybackSourceContext(PlaybackSourceContext.RECOMMENDED, "Recommended")
                 val onlineSong = OnlineSong(
                     videoId = song.id,
                     title = song.title,
@@ -869,6 +892,7 @@ class MusicController @Inject constructor(
      */
     fun playPlaylist(songs: List<PlayableSong>, startIndex: Int = 0) {
         if (songs.isEmpty()) return
+        setPlaybackSourceContext(PlaybackSourceContext.PLAYLIST, "Playlist songs")
         val entities = songs.map { playable ->
             when (playable) {
                 is PlayableSong.Local -> playable.entity
@@ -907,6 +931,7 @@ class MusicController @Inject constructor(
 
     fun playOnlineSongs(songs: List<OnlineSong>, startIndex: Int = 0) {
         if (songs.isEmpty()) return
+        setPlaybackSourceContext(PlaybackSourceContext.RECOMMENDED, "Recommended")
         cancelActiveRecovery("playOnlineSongs")
         isCurrentTrackAutoplayRecommendation = false
         val clampedIndex = startIndex.coerceIn(0, songs.size - 1)
@@ -990,6 +1015,7 @@ class MusicController @Inject constructor(
 
     fun playDownloadedSongs(songs: List<DownloadedSongEntity>, startIndex: Int = 0) {
         if (songs.isEmpty()) return
+        setPlaybackSourceContext(PlaybackSourceContext.DOWNLOADS, "Downloaded songs")
         val entities = songs.map { d ->
             SongEntity(
                 id = d.id,
@@ -1008,6 +1034,7 @@ class MusicController @Inject constructor(
     }
 
     fun playDownloadedSong(song: DownloadedSongEntity) {
+        setPlaybackSourceContext(PlaybackSourceContext.DOWNLOADS, "Downloaded songs")
         scope.launch {
             val downloads = withContext(Dispatchers.IO) {
                 downloadedSongDao.getAllDownloadsSync()
@@ -1463,7 +1490,9 @@ class MusicController @Inject constructor(
     }
 
     fun setPlayerVolume(volume: Float) {
-        runOnApplicationThread { it.volume = volume }
+        val clamped = volume.coerceIn(0.0f, 1.0f)
+        DesktopAudioBackend.setVolume(clamped)
+        runOnApplicationThread { it.volume = clamped }
     }
 
     fun getPlayerVolume(): Float {

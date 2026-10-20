@@ -293,6 +293,12 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
                 val isDownloading by viewModel.isCurrentSongDownloading.collectAsStateWithLifecycle()
                 val currentAudioQuality by viewModel.currentAudioQuality.collectAsStateWithLifecycle()
                 val positionState = viewModel.currentPosition.collectAsStateWithLifecycle()
+                val sideTracks by viewModel.sideTracks.collectAsStateWithLifecycle()
+                val sideTrackTitle by viewModel.contextTitle.collectAsStateWithLifecycle()
+                val playbackContext by viewModel.playbackSourceContext.collectAsStateWithLifecycle()
+                val playlists by viewModel.allPlaylists.collectAsStateWithLifecycle()
+                val playerVolume by viewModel.playerVolume.collectAsStateWithLifecycle()
+
                 NowPlayingScreen(
                     canDownload = canDownload,
                     isDownloaded = isDownloaded,
@@ -320,7 +326,18 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
                     onToggleShuffle = { viewModel.toggleShuffle() },
                     repeatMode = repeatMode,
                     onCycleRepeatMode = { viewModel.cycleRepeatMode() },
-                    onNavigateToSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } }
+                    onNavigateToSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } },
+                    sideTracks = sideTracks,
+                    sideTrackTitle = sideTrackTitle,
+                    playbackContext = playbackContext,
+                    onSideTrackClick = { viewModel.playSideTrack(it) },
+                    onContextChange = { viewModel.setSideTrackContext(it) },
+                    playlists = playlists,
+                    onAddToPlaylist = { viewModel.addCurrentSongToPlaylist(it) },
+                    onAddTrackToPlaylist = { playlistId, track -> viewModel.addSongToPlaylist(playlistId, track) },
+                    onCreatePlaylistAndAdd = { viewModel.createPlaylistAndAdd(it) },
+                    playerVolume = playerVolume,
+                    onVolumeChange = { viewModel.setPlayerVolume(it) }
                 )
             }
             composable(Screen.Settings.route) {

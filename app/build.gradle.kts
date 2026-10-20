@@ -30,7 +30,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe)
             packageName = "MyPlayer"
-            packageVersion = "1.0.0"
+            packageVersion = "2.0.0"
             modules(
                 "java.base",
                 "java.desktop",

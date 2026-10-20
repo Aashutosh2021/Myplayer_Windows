@@ -73,6 +73,7 @@ val OnErrorContainer: Color     = Color(0xFF93000A)
 val NeonLimePrimary: Color      get() = CharcoalPrimary
 val OnNeonLime: Color           get() = PureWhite
 val ClayPrimary: Color          get() = CharcoalPrimary
+val OnClayPrimary: Color        get() = PureWhite
 val ClaySecondary: Color        get() = SlateSecondary
 val ClayTertiary: Color         get() = SilverMuted
 

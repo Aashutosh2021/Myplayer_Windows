@@ -91,7 +91,7 @@ class ArtworkRepositoryTest {
         )
 
         assertNotNull(result)
-        assertEquals("https://lh3.googleusercontent.com/thumbnail", result?.url)
+        assertEquals("https://lh3.googleusercontent.com/thumbnail=w800-h800-l90-rj", result?.url)
         assertEquals("Local", result?.provider)
     }
 

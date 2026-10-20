@@ -11,6 +11,10 @@ import com.example.myplayer.data.repository.*
 import com.example.myplayer.playback.*
 import com.example.myplayer.security.NetworkSecurityManager
 import com.example.myplayer.security.StringEncryptionManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import java.lang.reflect.ParameterizedType
 import java.lang.reflect.Type
@@ -18,6 +22,7 @@ import java.lang.reflect.Type
 object AppContainer {
     val viewModels = mutableMapOf<Class<*>, ViewModel>()
     private val singletons = mutableMapOf<Class<*>, Any>()
+    private val scope = CoroutineScope(Dispatchers.IO)
 
     fun initialize() {
         println("[AppContainer] Initializing desktop dependencies...")
@@ -43,12 +48,25 @@ object AppContainer {
         register(RecentSearchDao::class.java, db.recentSearchDao())
         register(CachedLyricsDao::class.java, db.cachedLyricsDao())
         register(CachedRecommendationDao::class.java, db.cachedRecommendationDao())
+        register(PlayedSongHistoryDao::class.java, db.playedSongHistoryDao())
 
         val okHttpClient = NetworkModule.provideOkHttpClient(NetworkSecurityManager())
         register(OkHttpClient::class.java, okHttpClient)
 
         val settingsDataStore = SettingsDataStore(appContext)
         register(SettingsDataStore::class.java, settingsDataStore)
+
+        com.example.myplayer.ui.theme.ThemeManager.onThemeChanged = { isDark ->
+            scope.launch {
+                settingsDataStore.setDarkMode(isDark)
+            }
+        }
+        scope.launch {
+            val savedDark = settingsDataStore.isDarkMode.firstOrNull()
+            if (savedDark != null) {
+                com.example.myplayer.ui.theme.ThemeManager.isDarkMode = savedDark
+            }
+        }
 
         val stringEncryptionManager = StringEncryptionManager()
         register(StringEncryptionManager::class.java, stringEncryptionManager)
@@ -115,6 +133,7 @@ object AppContainer {
             playbackRouter = playbackRouter,
             playbackEventBus = playbackEventBus,
             downloadedSongDao = db.downloadedSongDao(),
+            playedSongHistoryDao = db.playedSongHistoryDao(),
             playbackSourceResolver = playbackSourceResolver,
             mediaItemFactory = mediaItemFactory
         )
@@ -134,11 +153,10 @@ object AppContainer {
         val recommendationCache = com.example.myplayer.data.recommendation.cache.RecommendationCache(recommendationLogger, db.cachedRecommendationDao())
         register(com.example.myplayer.data.recommendation.cache.RecommendationCache::class.java, recommendationCache)
 
-        val lastFmConfig = com.example.myplayer.data.recommendation.lastfm.LastFmConfig(stringEncryptionManager)
-        val lastFmCache = com.example.myplayer.data.recommendation.lastfm.LastFmCache()
-        val lastFmChartSource = com.example.myplayer.data.recommendation.lastfm.LastFmChartSource(okHttpClient, lastFmConfig, lastFmCache)
-        val lastFmTrackMatcher = com.example.myplayer.data.recommendation.lastfm.LastFmTrackMatcher(innertubeApi)
-        val lastFmSource = com.example.myplayer.data.recommendation.api.LastFmRecommendationSource(lastFmChartSource, lastFmTrackMatcher, innertubeApi)
+        val aiModel = com.example.myplayer.data.recommendation.ai.OnDeviceMusicAiModel(appContext, innertubeApi)
+        register(com.example.myplayer.data.recommendation.ai.OnDeviceMusicAiModel::class.java, aiModel)
+
+        val lastFmSource = com.example.myplayer.data.recommendation.api.LastFmRecommendationSource(aiModel)
         register(com.example.myplayer.data.recommendation.api.LastFmRecommendationSource::class.java, lastFmSource)
 
         val youTubeSource = com.example.myplayer.data.recommendation.api.YouTubeRecommendationSource(innertubeApi)

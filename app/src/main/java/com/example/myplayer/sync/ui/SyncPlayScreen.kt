@@ -2,9 +2,12 @@ package com.example.myplayer.sync.ui
 
 import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -13,10 +16,14 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
@@ -56,6 +63,7 @@ fun SyncPlayScreen(
     var showJoinByIpDialog by remember { mutableStateOf(false) }
     var inputIp by remember { mutableStateOf("") }
     var inputPort by remember { mutableStateOf("45200") }
+    var showUserManual by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -77,6 +85,15 @@ fun SyncPlayScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showUserManual = !showUserManual }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.HelpOutline,
+                            contentDescription = "User Manual",
+                            tint = if (showUserManual) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 },
@@ -128,6 +145,21 @@ fun SyncPlayScreen(
                             )
                         }
                     }
+                }
+            }
+
+            // When active in a room, top bar help button shows the user manual card
+            AnimatedVisibility(
+                visible = showUserManual && state.role != SyncRole.NONE,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                Column {
+                    SyncPlayUserManualCard(
+                        expanded = true,
+                        onToggle = { showUserManual = false }
+                    )
+                    Spacer(Modifier.height(16.dp))
                 }
             }
 
@@ -193,6 +225,14 @@ fun SyncPlayScreen(
                         }
                     }
 
+                    Spacer(Modifier.height(16.dp))
+
+                    // User Manual & Quick Start
+                    SyncPlayUserManualCard(
+                        expanded = showUserManual,
+                        onToggle = { showUserManual = !showUserManual }
+                    )
+
                     Spacer(Modifier.height(20.dp))
 
                     // Currently playing song indicator
@@ -255,11 +295,15 @@ fun SyncPlayScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ),
                         shape = RoundedCornerShape(14.dp)
                     ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
                         Spacer(Modifier.width(8.dp))
-                        Text("CREATE ROOM (HOST)", fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("CREATE ROOM (HOST)", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
                     }
 
                     Spacer(Modifier.height(12.dp))
@@ -269,11 +313,15 @@ fun SyncPlayScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                         shape = RoundedCornerShape(14.dp)
                     ) {
-                        Icon(Icons.Default.Sync, contentDescription = null)
+                        Icon(Icons.Default.Sync, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
                         Spacer(Modifier.width(8.dp))
-                        Text("JOIN NEARBY ROOM (AUTO)", fontWeight = FontWeight.Bold)
+                        Text("JOIN NEARBY ROOM (AUTO)", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                     }
 
                     Spacer(Modifier.height(12.dp))
@@ -283,11 +331,15 @@ fun SyncPlayScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(48.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                         shape = RoundedCornerShape(14.dp)
                     ) {
-                        Icon(Icons.Default.SettingsEthernet, contentDescription = null)
+                        Icon(Icons.Default.SettingsEthernet, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
                         Spacer(Modifier.width(8.dp))
-                        Text("JOIN BY IP ADDRESS", fontWeight = FontWeight.Medium)
+                        Text("JOIN BY IP ADDRESS", fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
                     }
                 }
 
@@ -988,6 +1040,146 @@ private fun DeviceItemCard(
                     color = MaterialTheme.colorScheme.primary
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun SyncPlayUserManualCard(
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .animateContentSize(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onToggle),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.MenuBook,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "User Manual & Quick Start",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = if (expanded) "Tap to collapse manual" else "Learn how to play in sync on 2+ devices",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = if (expanded) "Collapse" else "Expand",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            if (expanded) {
+                Spacer(Modifier.height(14.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                )
+                Spacer(Modifier.height(14.dp))
+
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SyncPlayManualStep(
+                        step = "1",
+                        title = "Connect to the Same Network",
+                        description = "Both devices must be connected to the same Wi-Fi router or local network. Alternatively, one device can host a Mobile Hotspot and the other connects to it."
+                    )
+                    SyncPlayManualStep(
+                        step = "2",
+                        title = "Device 1: Host a Room",
+                        description = "Tap 'CREATE ROOM (HOST)'. This device acts as the master sync clock and starts broadcasting to nearby devices on the network."
+                    )
+                    SyncPlayManualStep(
+                        step = "3",
+                        title = "Device 2: Join the Room",
+                        description = "Tap 'JOIN NEARBY ROOM (AUTO)'. Select the host from the discovered devices. Or use 'JOIN BY IP' if on a subnet/restricted router."
+                    )
+                    SyncPlayManualStep(
+                        step = "4",
+                        title = "Synchronized Playback",
+                        description = "Play any local or online song on the Host. Audio synchronizes with sub-millisecond precision across all connected devices!"
+                    )
+                    SyncPlayManualStep(
+                        step = "5",
+                        title = "Real-time Playback Sync",
+                        description = "Play, pause, seek, or skip tracks on the Host — all connected guest devices follow in perfect real-time synchronization."
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SyncPlayManualStep(
+    step: String,
+    title: String,
+    description: String
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top
+    ) {
+        Box(
+            modifier = Modifier
+                .size(24.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = step,
+                color = MaterialTheme.colorScheme.onPrimary,
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 18.sp
+            )
         }
     }
 }

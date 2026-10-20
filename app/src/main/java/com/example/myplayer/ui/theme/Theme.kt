@@ -17,12 +17,23 @@ object ThemeManager {
             return hour < 6 || hour >= 18
         }
 
-    var isDark by mutableStateOf(isNightTime)
+    var isDarkMode by mutableStateOf(isNightTime)
+    val isDark: Boolean get() = isDarkMode
+    var onThemeChanged: ((Boolean) -> Unit)? = null
 
     fun toggle() {
-        isDark = !isDark
+        setDark(!isDarkMode)
+    }
+
+    fun setDark(enabled: Boolean) {
+        if (isDarkMode != enabled) {
+            isDarkMode = enabled
+            onThemeChanged?.invoke(enabled)
+        }
     }
 }
+
+val ThemeState = ThemeManager
 
 private val EditorialLightColorScheme = lightColorScheme(
     primary              = Color(0xFF171C26),

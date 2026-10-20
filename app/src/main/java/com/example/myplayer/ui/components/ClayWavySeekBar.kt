@@ -17,8 +17,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.example.myplayer.ui.theme.ClayPrimary
-import com.example.myplayer.ui.theme.ClaySecondary
+import com.example.myplayer.ui.theme.*
 import kotlin.math.PI
 import kotlin.math.sin
 
@@ -174,9 +173,9 @@ fun ClayWavySeekBar(
                     radius = thumbRadiusPx,
                     center = androidx.compose.ui.geometry.Offset(activeEndPx, thumbY)
                 )
-                // Inner bright dot
+                // Inner bright dot (contrasting in dark and light mode)
                 drawCircle(
-                    color = Color.White,
+                    color = if (activeColor == Color.White || activeColor == PureWhite) OnClayPrimary else Color.White,
                     radius = thumbRadiusPx * 0.45f,
                     center = androidx.compose.ui.geometry.Offset(activeEndPx, thumbY)
                 )

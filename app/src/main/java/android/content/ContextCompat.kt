@@ -25,46 +25,84 @@ interface SharedPreferences {
 }
 
 class DesktopSharedPreferences(private val name: String) : SharedPreferences {
-    private val prefs: Preferences = Preferences.userRoot().node("myplayer/$name")
+    private val dir = File(System.getProperty("user.home"), ".myplayer/prefs").apply { mkdirs() }
+    private val file = File(dir, "$name.properties")
+    private val data = java.util.concurrent.ConcurrentHashMap<String, String>()
 
-    override fun getString(key: String, defValue: String?): String? = prefs.get(key, defValue)
-    override fun getInt(key: String, defValue: Int): Int = prefs.getInt(key, defValue)
-    override fun getBoolean(key: String, defValue: Boolean): Boolean = prefs.getBoolean(key, defValue)
-    override fun getLong(key: String, defValue: Long): Long = prefs.getLong(key, defValue)
-    override fun contains(key: String): Boolean = prefs.get(key, null) != null
+    init {
+        if (file.exists()) {
+            try {
+                file.bufferedReader(Charsets.UTF_8).use { reader ->
+                    val props = java.util.Properties()
+                    props.load(reader)
+                    props.forEach { (k, v) -> data[k.toString()] = v.toString() }
+                }
+            } catch (_: Exception) {}
+        } else {
+            try {
+                val legacy = Preferences.userRoot().node("myplayer/$name")
+                val keys = legacy.keys()
+                if (keys != null && keys.isNotEmpty()) {
+                    for (k in keys) {
+                        val v = legacy.get(k, null)
+                        if (v != null) data[k] = v
+                    }
+                    persist()
+                }
+            } catch (_: Exception) {}
+        }
+    }
 
-    override fun edit(): SharedPreferences.Editor = EditorImpl(prefs)
+    override fun getString(key: String, defValue: String?): String? = data[key] ?: defValue
+    override fun getInt(key: String, defValue: Int): Int = data[key]?.toIntOrNull() ?: defValue
+    override fun getBoolean(key: String, defValue: Boolean): Boolean = data[key]?.toBooleanStrictOrNull() ?: defValue
+    override fun getLong(key: String, defValue: Long): Long = data[key]?.toLongOrNull() ?: defValue
+    override fun contains(key: String): Boolean = data.containsKey(key)
 
-    private class EditorImpl(private val prefs: Preferences) : SharedPreferences.Editor {
+    override fun edit(): SharedPreferences.Editor = EditorImpl(this)
+
+    @Synchronized
+    private fun persist() {
+        try {
+            val props = java.util.Properties()
+            data.forEach { (k, v) -> props[k] = v }
+            file.bufferedWriter(Charsets.UTF_8).use { writer ->
+                props.store(writer, null)
+            }
+        } catch (_: Exception) {}
+    }
+
+    private class EditorImpl(private val parent: DesktopSharedPreferences) : SharedPreferences.Editor {
         private val actions = mutableListOf<() -> Unit>()
 
         override fun putString(key: String, value: String?): SharedPreferences.Editor {
-            actions.add { if (value != null) prefs.put(key, value) else prefs.remove(key) }
+            actions.add { if (value != null) parent.data[key] = value else parent.data.remove(key) }
             return this
         }
         override fun putInt(key: String, value: Int): SharedPreferences.Editor {
-            actions.add { prefs.putInt(key, value) }
+            actions.add { parent.data[key] = value.toString() }
             return this
         }
         override fun putBoolean(key: String, value: Boolean): SharedPreferences.Editor {
-            actions.add { prefs.putBoolean(key, value) }
+            actions.add { parent.data[key] = value.toString() }
             return this
         }
         override fun putLong(key: String, value: Long): SharedPreferences.Editor {
-            actions.add { prefs.putLong(key, value) }
+            actions.add { parent.data[key] = value.toString() }
             return this
         }
         override fun remove(key: String): SharedPreferences.Editor {
-            actions.add { prefs.remove(key) }
+            actions.add { parent.data.remove(key) }
             return this
         }
         override fun clear(): SharedPreferences.Editor {
-            actions.add { prefs.clear() }
+            actions.add { parent.data.clear() }
             return this
         }
         override fun apply() {
             actions.forEach { it() }
             actions.clear()
+            parent.persist()
         }
         override fun commit(): Boolean {
             apply()

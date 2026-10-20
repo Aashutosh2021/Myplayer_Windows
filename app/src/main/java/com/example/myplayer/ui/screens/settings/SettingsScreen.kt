@@ -401,6 +401,21 @@ fun SettingsScreen(
             )
         }
 
+        // Section: Appearance
+        item { SettingsSectionHeader(title = "Appearance") }
+
+        item {
+            SettingsToggleRow(
+                icon = if (ThemeState.isDarkMode) Icons.Filled.DarkMode else Icons.Filled.LightMode,
+                title = "Dark Mode",
+                subtitle = if (ThemeState.isDarkMode) "Dark theme enabled" else "Light theme enabled",
+                checked = ThemeState.isDarkMode,
+                onCheckedChange = { enabled ->
+                    ThemeState.setDark(enabled)
+                }
+            )
+        }
+
         // Section: Playback
         item { SettingsSectionHeader(title = "Playback") }
 

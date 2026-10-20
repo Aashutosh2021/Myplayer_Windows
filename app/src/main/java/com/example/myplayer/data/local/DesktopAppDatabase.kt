@@ -146,6 +146,19 @@ class DesktopAppDatabase : AppDatabase() {
                     cachedAt INTEGER NOT NULL
                 );
             """.trimIndent())
+
+            stmt.execute("""
+                CREATE TABLE IF NOT EXISTS played_songs_history (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    artist TEXT NOT NULL,
+                    thumbnailUrl TEXT,
+                    durationMs INTEGER NOT NULL,
+                    isOnline INTEGER NOT NULL,
+                    playedAt INTEGER NOT NULL
+                );
+            """.trimIndent())
+            stmt.execute("CREATE INDEX IF NOT EXISTS index_played_songs_history_playedAt ON played_songs_history (playedAt);")
         }
     }
 
@@ -162,6 +175,7 @@ class DesktopAppDatabase : AppDatabase() {
                 stmt.execute("DELETE FROM recent_searches")
                 stmt.execute("DELETE FROM cached_lyrics")
                 stmt.execute("DELETE FROM cached_recommendations")
+                stmt.execute("DELETE FROM played_songs_history")
             }
         }
         notifyChange("*")
@@ -949,5 +963,73 @@ class DesktopAppDatabase : AppDatabase() {
             seedId = rs.getString("seedId"),
             cachedAt = rs.getLong("cachedAt")
         )
+    }
+
+    override fun playedSongHistoryDao(): PlayedSongHistoryDao = object : PlayedSongHistoryDao {
+        override fun getPlayedHistory(cutoffTime: Long): Flow<List<PlayedSongHistoryEntity>> = tableFlow("played_songs_history") {
+            synchronized(connection) {
+                val ps = connection.prepareStatement("SELECT * FROM played_songs_history WHERE playedAt >= ? ORDER BY playedAt DESC LIMIT 100")
+                ps.setLong(1, cutoffTime)
+                val rs = ps.executeQuery()
+                val list = mutableListOf<PlayedSongHistoryEntity>()
+                while (rs.next()) {
+                    list.add(
+                        PlayedSongHistoryEntity(
+                            id = rs.getString("id"),
+                            title = rs.getString("title"),
+                            artist = rs.getString("artist"),
+                            thumbnailUrl = rs.getString("thumbnailUrl"),
+                            durationMs = rs.getLong("durationMs"),
+                            isOnline = rs.getInt("isOnline") == 1,
+                            playedAt = rs.getLong("playedAt")
+                        )
+                    )
+                }
+                list
+            }
+        }
+
+        override suspend fun insertOrUpdate(song: PlayedSongHistoryEntity) {
+            synchronized(connection) {
+                val ps = connection.prepareStatement("""
+                    INSERT OR REPLACE INTO played_songs_history (id, title, artist, thumbnailUrl, durationMs, isOnline, playedAt)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent())
+                ps.setString(1, song.id)
+                ps.setString(2, song.title)
+                ps.setString(3, song.artist)
+                ps.setString(4, song.thumbnailUrl)
+                ps.setLong(5, song.durationMs)
+                ps.setInt(6, if (song.isOnline) 1 else 0)
+                ps.setLong(7, song.playedAt)
+                ps.executeUpdate()
+            }
+            notifyChange("played_songs_history")
+        }
+
+        override suspend fun deleteById(id: String) {
+            synchronized(connection) {
+                val ps = connection.prepareStatement("DELETE FROM played_songs_history WHERE id = ?")
+                ps.setString(1, id)
+                ps.executeUpdate()
+            }
+            notifyChange("played_songs_history")
+        }
+
+        override suspend fun clearHistory() {
+            synchronized(connection) {
+                connection.createStatement().execute("DELETE FROM played_songs_history")
+            }
+            notifyChange("played_songs_history")
+        }
+
+        override suspend fun pruneOldHistory(cutoffTime: Long) {
+            synchronized(connection) {
+                val ps = connection.prepareStatement("DELETE FROM played_songs_history WHERE playedAt < ?")
+                ps.setLong(1, cutoffTime)
+                ps.executeUpdate()
+            }
+            notifyChange("played_songs_history")
+        }
     }
 }

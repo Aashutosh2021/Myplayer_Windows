@@ -1,39 +1,34 @@
 package com.example.myplayer.ui.screens.home
 
+import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.myplayer.data.local.datastore.SettingsDataStore
 import com.example.myplayer.data.local.entity.SongEntity
-import com.example.myplayer.data.repository.DownloadRepository
-import com.example.myplayer.data.repository.MusicRepository
-import com.example.myplayer.playback.MusicController
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
+import com.example.myplayer.data.online.InnertubeApi
+import com.example.myplayer.data.online.model.OnlineSong
 import com.example.myplayer.data.recommendation.RecommendationCoordinator
+import com.example.myplayer.data.recommendation.ai.OnDeviceMusicAiModel
+import com.example.myplayer.data.recommendation.api.LastFmRecommendationSource
+import com.example.myplayer.data.recommendation.cache.RecommendationCache
 import com.example.myplayer.data.recommendation.model.RecommendationSong
 import com.example.myplayer.data.recommendation.state.RecommendationUserState
 import com.example.myplayer.data.recommendation.state.RecommendationUserStateDetector
-import com.example.myplayer.data.online.model.OnlineSong
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
-import javax.inject.Inject
-
-import android.util.Log
-import com.example.myplayer.data.recommendation.api.LastFmRecommendationSource
-import com.example.myplayer.data.online.InnertubeApi
-import com.example.myplayer.data.recommendation.cache.RecommendationCache
-import com.example.myplayer.data.recommendation.model.RecommendationSeed
+import com.example.myplayer.data.repository.DownloadRepository
+import com.example.myplayer.data.repository.MusicRepository
 import com.example.myplayer.data.repository.RecentHistoryRepository
+import com.example.myplayer.playback.MusicController
+import com.example.myplayer.ui.theme.ThemeManager
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import javax.inject.Inject
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
@@ -46,7 +41,8 @@ class HomeViewModel @Inject constructor(
     private val recentHistoryRepository: RecentHistoryRepository,
     private val innertubeApi: InnertubeApi,
     private val recommendationCache: RecommendationCache,
-    private val lastFmRecommendationSource: LastFmRecommendationSource
+    private val lastFmRecommendationSource: LastFmRecommendationSource,
+    private val aiModel: OnDeviceMusicAiModel
 ) : ViewModel() {
 
     private val _userState = MutableStateFlow<RecommendationUserState?>(null)
@@ -56,16 +52,16 @@ class HomeViewModel @Inject constructor(
 
     private val _categoryRecommendations = MutableStateFlow<Map<String, List<RecommendationSong>>>(emptyMap())
 
-    // Live Trending Music directly from API (never polluted by playback history)
-    private val _trendingApiSongs = MutableStateFlow<List<RecommendationSong>>(emptyList())
+    private val _aiRecommendations = MutableStateFlow<List<RecommendationSong>>(emptyList())
 
     val recommendations: StateFlow<List<RecommendationSong>> = combine(
         selectedCategory,
-        _trendingApiSongs,
-        _categoryRecommendations
-    ) { category, trending, catMap ->
+        _aiRecommendations,
+        _categoryRecommendations,
+        recommendationCoordinator.queueState
+    ) { category, aiList, catMap, liveQueue ->
         if (category == "All") {
-            trending
+            aiList.ifEmpty { liveQueue }
         } else {
             catMap[category] ?: emptyList()
         }
@@ -74,87 +70,15 @@ class HomeViewModel @Inject constructor(
     private val _isLoadingRecommendations = MutableStateFlow(true)
     val isLoadingRecommendations: StateFlow<Boolean> = _isLoadingRecommendations.asStateFlow()
 
-    init {
-        // Load persisted fallback from cache if available for immediate display
-        viewModelScope.launch {
-            val persisted = withContext(Dispatchers.IO) {
-                recommendationCache.getPersistedFallback(limit = 30)
-            }
-            if (persisted.isNotEmpty() && _trendingApiSongs.value.isEmpty()) {
-                _trendingApiSongs.value = persisted
-                _isLoadingRecommendations.value = false
-            }
-        }
-
-        viewModelScope.launch {
-            loadLiveTrendingMusic()
-        }
-
-        viewModelScope.launch {
-            recommendations.collect { list ->
-                if (list.isNotEmpty()) {
-                    _isLoadingRecommendations.value = false
-                }
-            }
-        }
-
-        viewModelScope.launch {
-            kotlinx.coroutines.delay(4000)
-            _isLoadingRecommendations.value = false
-        }
-    }
-
-    fun refreshTrendingMusic() {
-        viewModelScope.launch {
-            loadLiveTrendingMusic()
-        }
-    }
-
-    private suspend fun loadLiveTrendingMusic() {
-        _isLoadingRecommendations.value = true
-        try {
-            val trendingSongs = withContext(Dispatchers.IO) {
-                val collected = mutableListOf<OnlineSong>()
-                val queries = listOf(
-                    "Top Trending Songs",
-                    "Trending Music Hits",
-                    "YouTube Music Trending",
-                    "Top 50 Songs",
-                    "Viral Hits Music"
-                )
-                for (q in queries) {
-                    try {
-                        val firstPage = innertubeApi.search(q, filtered = true)
-                        collected.addAll(firstPage.songs)
-                        if (firstPage.continuationToken != null && collected.size < 60) {
-                            val nextPage = innertubeApi.search(q, continuationToken = firstPage.continuationToken, filtered = true)
-                            collected.addAll(nextPage.songs)
-                        }
-                    } catch (_: Exception) {}
-                }
-
-                collected.distinctBy { it.videoId }.map { online ->
-                    RecommendationSong(
-                        videoId = online.videoId,
-                        title = online.title,
-                        artist = online.artist,
-                        thumbnailUrl = online.thumbnailUrl,
-                        durationMs = online.durationMs,
-                        source = "trending_api"
-                    )
-                }
-            }
-
-            if (trendingSongs.isNotEmpty()) {
-                _trendingApiSongs.value = trendingSongs
-            }
-        } finally {
-            _isLoadingRecommendations.value = false
-        }
-    }
-
     val userName: StateFlow<String> = settingsDataStore.userName
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Alex Rivera")
+
+    val isDarkMode: StateFlow<Boolean> = settingsDataStore.isDarkMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeManager.isDark)
+
+    fun toggleDarkMode() {
+        ThemeManager.toggle()
+    }
 
     private val downloadedEntities: Flow<List<SongEntity>> = downloadRepository.getAllDownloads()
         .map { list ->
@@ -203,90 +127,92 @@ class HomeViewModel @Inject constructor(
     val currentSong = musicController.currentSong
     val isPlaying = musicController.isPlaying
 
-    fun selectCategory(category: String) {
-        selectedCategory.value = category
-        if (category == "All") {
-            _isLoadingRecommendations.value = false
-            return
-        }
-
-        val cached = _categoryRecommendations.value[category]
-        if (cached != null && cached.size >= 30) {
-            _isLoadingRecommendations.value = false
-            return
-        }
-
+    init {
+        // 1. Sync existing local Favorites / MostPlayed / Downloads into On-Device AI Brain
         viewModelScope.launch {
-            _isLoadingRecommendations.value = true
-            try {
-                val songs = fetchGenreRecommendations(category)
-                if (songs.isNotEmpty()) {
-                    _categoryRecommendations.update { it + (category to songs) }
+            combine(mostPlayed, favoriteSongs, downloadedEntities) { most, fav, down ->
+                val favIds = fav.map { it.id }.toSet()
+                val allSongsList = (fav + most + down).distinctBy { it.id }
+                allSongsList to favIds
+            }.collect { (localSignals, favIds) ->
+                if (localSignals.isNotEmpty()) {
+                    aiModel.syncLibrarySignals(localSignals, favIds)
                 }
-            } catch (e: Exception) {
-                // Fail gracefully
-            } finally {
-                _isLoadingRecommendations.value = false
+            }
+        }
+
+        // 2. Auto-train AI whenever user plays/skips/completes a song!
+        viewModelScope.launch {
+            combine(
+                musicController.currentSong,
+                musicController.currentOnlineSong
+            ) { local, online ->
+                when {
+                    online != null -> arrayOf(online.videoId, online.title, online.artist, online.durationMs.toString())
+                    local != null -> arrayOf(local.videoId ?: local.id, local.title, local.artist, local.duration.toString())
+                    else -> null
+                }
+            }.collect { played ->
+                if (played != null && played[0].isNotBlank()) {
+                    aiModel.onSongTransition(
+                        videoId = played[0],
+                        title = played[1],
+                        artist = played[2],
+                        durationMs = played[3].toLongOrNull() ?: 0L
+                    )
+                    // Refresh recommendations after learning first song if list was empty
+                    if (_aiRecommendations.value.isEmpty()) {
+                        refreshAiRecommendations()
+                    }
+                }
+            }
+        }
+
+        // 3. Load initial AI recommendations on startup
+        viewModelScope.launch {
+            refreshAiRecommendations()
+        }
+
+        // 4. Periodic auto-refresh every 15 minutes (not constantly)
+        viewModelScope.launch {
+            while (isActive) {
+                delay(15 * 60 * 1000L)
+                refreshAiRecommendations()
             }
         }
     }
 
-    private suspend fun fetchGenreRecommendations(category: String): List<RecommendationSong> = withContext(Dispatchers.IO) {
-        val collected = mutableListOf<OnlineSong>()
-
-        val primaryQuery = when (category.lowercase()) {
-            "deep focus" -> "Deep focus ambient drone study lofi music"
-            "acoustic chill" -> "Acoustic chill guitar warm indie acoustic"
-            "late night" -> "Late night synthwave chill electro songs"
-            "discoveries" -> "Indie gems new music discovery trending songs"
-            else -> "$category songs"
+    fun refreshTrendingMusic() {
+        viewModelScope.launch {
+            refreshAiRecommendations()
         }
-        val firstPage = innertubeApi.search(primaryQuery)
-        collected.addAll(firstPage.songs)
+    }
 
-        if (collected.size < 30 && firstPage.continuationToken != null) {
-            try {
-                val secondPage = innertubeApi.search(primaryQuery, continuationToken = firstPage.continuationToken)
-                collected.addAll(secondPage.songs)
-            } catch (e: Exception) {
-                // Ignore continuation failure
+    private suspend fun refreshAiRecommendations() {
+        _isLoadingRecommendations.value = true
+        try {
+            val list = aiModel.generateRecommendations(limit = 45)
+            if (list.isNotEmpty()) {
+                _aiRecommendations.value = list
             }
+        } finally {
+            _isLoadingRecommendations.value = false
         }
+    }
 
-        if (collected.size < 30) {
+    fun selectCategory(category: String) {
+        selectedCategory.value = category
+        if (category == "All") return
+        if (_categoryRecommendations.value.containsKey(category)) return
+
+        viewModelScope.launch {
+            _isLoadingRecommendations.value = true
             try {
-                val complementaryQuery = when (category.lowercase()) {
-                    "party" -> "Party club dance hits"
-                    "blues" -> "Classic blues acoustic soul"
-                    "sad" -> "Sad songs emotional heartbreak"
-                    "hip hop" -> "Top hip hop rap hits"
-                    "chill" -> "Chill lofi beats relax"
-                    "workout" -> "Gym workout motivation music"
-                    "pop" -> "Top pop hits global"
-                    "deep focus" -> "Study lofi beats deep focus relax ambient"
-                    "acoustic chill" -> "Warm acoustic folk singer songwriter chill"
-                    "late night" -> "Late night drive synthwave cyberpunk electro"
-                    "discoveries" -> "Discover weekly indie alternative new music"
-                    else -> "Best $category music hits"
-                }
-                val compPage = innertubeApi.search(complementaryQuery)
-                collected.addAll(compPage.songs)
-            } catch (e: Exception) {
-                // Ignore
+                val results = aiModel.generateCategoryRecommendations(category, limit = 35)
+                _categoryRecommendations.value = _categoryRecommendations.value + (category to results)
+            } finally {
+                _isLoadingRecommendations.value = false
             }
-        }
-
-        val distinctSongs = collected.distinctBy { it.videoId }
-
-        distinctSongs.map { online ->
-            RecommendationSong(
-                videoId = online.videoId,
-                title = online.title,
-                artist = online.artist,
-                thumbnailUrl = online.thumbnailUrl,
-                durationMs = online.durationMs,
-                source = "genre_$category"
-            )
         }
     }
 
@@ -313,7 +239,7 @@ class HomeViewModel @Inject constructor(
                 cached
             } else {
                 try {
-                    fetchGenreRecommendations(category).also { fetched ->
+                    aiModel.generateCategoryRecommendations(category, limit = 35).also { fetched ->
                         if (fetched.isNotEmpty()) {
                             _categoryRecommendations.update { it + (category to fetched) }
                         }
@@ -340,11 +266,15 @@ class HomeViewModel @Inject constructor(
     fun playSong(songs: List<SongEntity>, startIndex: Int) {
         musicController.playSongs(songs, startIndex)
         val song = songs.getOrNull(startIndex) ?: return
+        aiModel.onSongTransition(song.videoId ?: song.id, song.title, song.artist, song.duration)
         viewModelScope.launch { repository.incrementPlayCount(song.id) }
         viewModelScope.launch { repository.addRecentHistory(song.id) }
     }
 
     fun toggleFavorite(song: SongEntity, isCurrentlyFavorite: Boolean) {
+        if (!isCurrentlyFavorite) {
+            aiModel.onPositiveFeedback(song.videoId ?: song.id, song.title, song.artist, song.duration)
+        }
         viewModelScope.launch { repository.toggleFavorite(com.example.myplayer.data.repository.PlayableSong.Local(song), isCurrentlyFavorite) }
     }
 
@@ -365,6 +295,7 @@ class HomeViewModel @Inject constructor(
         musicController.playOnlineSongs(onlineSongs, clampedIndex)
         val selected = songs.getOrNull(clampedIndex)
         if (selected != null) {
+            aiModel.onSongTransition(selected.videoId, selected.title, selected.artist, selected.durationMs)
             viewModelScope.launch {
                 repository.addRecentHistory(selected.videoId)
             }
@@ -375,5 +306,3 @@ class HomeViewModel @Inject constructor(
         playRecommendedSongs(listOf(song), 0)
     }
 }
-
-

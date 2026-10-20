@@ -51,7 +51,7 @@ class ArtworkRepository @Inject constructor(
         if (!localArtworkUri.isNullOrBlank()) {
             return ArtworkResult(
                 url = upgradeThumbnailIfNeeded(localArtworkUri),
-                provider = "Direct",
+                provider = "Local",
                 width = 0,
                 height = 0
             )

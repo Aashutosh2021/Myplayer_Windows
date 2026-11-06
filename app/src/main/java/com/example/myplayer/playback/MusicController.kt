@@ -857,11 +857,14 @@ class MusicController @Inject constructor(
         playbackStateManager.updateCurrentOnlineSong(null)
 
         val requests = songs.map { song ->
+            val isOnline = song.path.startsWith("online://") || song.path.startsWith("http") ||
+                song.id.startsWith("spotify:") || song.id.startsWith("online://") ||
+                song.videoId != null
             PlayRequest(
                 songId = song.id,
                 title = song.title,
                 artist = song.artist,
-                playbackSource = PlaybackSourceType.LOCAL,
+                playbackSource = if (isOnline) PlaybackSourceType.ONLINE else PlaybackSourceType.LOCAL,
                 localUri = song.path,
                 albumArt = song.albumArt
             )
@@ -1125,6 +1128,11 @@ class MusicController @Inject constructor(
         try {
             context.startService(android.content.Intent(context, MusicService::class.java))
         } catch (_: Exception) {}
+        val ctrl = mediaController
+        if (ctrl?.currentMediaItem == null && _songQueue.isNotEmpty()) {
+            playQueueIndex(currentQueueIndex.coerceIn(0, _songQueue.size - 1))
+            return
+        }
         runOnApplicationThread { it.play() }
     }
 

@@ -3,8 +3,10 @@ package com.example.myplayer.playback
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
@@ -67,7 +69,7 @@ object DesktopChunkStreamProxy {
     private val urlToSongKey = ConcurrentHashMap<String, String>()
     private val totalLengthCache = ConcurrentHashMap<String, Long>()
     private val contentTypeCache = ConcurrentHashMap<String, String>()
-    private val inFlightChunks = ConcurrentHashMap<String, Any>()
+    private val inFlightChunks = ConcurrentHashMap<String, Deferred<ByteArray?>>()
 
     @Volatile
     private var serverSocket: ServerSocket? = null
@@ -277,84 +279,108 @@ object DesktopChunkStreamProxy {
         if (knownTotal > 0L && startByte >= knownTotal) return ByteArray(0)
 
         val lockKey = "$songKey:$chunkIndex"
-        val lock = inFlightChunks.computeIfAbsent(lockKey) { Any() }
+        val deferred = inFlightChunks.computeIfAbsent(lockKey) {
+            proxyScope.async {
+                fetchChunkInternal(songKey, upstreamUrl, songDir, chunkIndex, chunkFile, knownTotal, startByte)
+            }
+        }
 
         return try {
-            // Re-check disk cache if another coroutine just finished downloading this chunk
-            if (chunkFile.exists() && chunkFile.length() > 0L) {
-                return chunkFile.readBytes()
-            }
+            deferred.await()
+        } finally {
+            inFlightChunks.remove(lockKey, deferred)
+        }
+    }
 
-            val endByte = if (knownTotal > 0L) {
-                min(startByte + CHUNK_SIZE_BYTES - 1L, knownTotal - 1L)
-            } else {
-                startByte + CHUNK_SIZE_BYTES - 1L
-            }
+    private suspend fun fetchChunkInternal(
+        songKey: String,
+        upstreamUrl: String,
+        songDir: File,
+        chunkIndex: Long,
+        chunkFile: File,
+        initialKnownTotal: Long,
+        startByte: Long
+    ): ByteArray? {
+        // Re-check disk cache before network call
+        if (chunkFile.exists() && chunkFile.length() > 0L) {
+            return runCatching { chunkFile.readBytes() }.getOrNull()
+        }
 
-            var attempt = 0
-            val backoffDelays = longArrayOf(350L, 700L, 1400L, 2500L)
-            while (attempt < MAX_CHUNK_RETRIES) {
-                try {
-                    val req = Request.Builder()
-                        .url(upstreamUrl)
-                        .addHeader("User-Agent", USER_AGENT)
-                        .addHeader("Range", "bytes=$startByte-$endByte")
-                        .build()
+        var knownTotal = initialKnownTotal
+        val endByte = if (knownTotal > 0L) {
+            min(startByte + CHUNK_SIZE_BYTES - 1L, knownTotal - 1L)
+        } else {
+            startByte + CHUNK_SIZE_BYTES - 1L
+        }
 
-                    httpClient.newCall(req).execute().use { response ->
-                        if (response.code == 416) {
-                            return ByteArray(0)
+        var attempt = 0
+        val backoffDelays = longArrayOf(350L, 700L, 1400L, 2500L)
+        while (attempt < MAX_CHUNK_RETRIES) {
+            try {
+                val req = Request.Builder()
+                    .url(upstreamUrl)
+                    .addHeader("User-Agent", USER_AGENT)
+                    .addHeader("Range", "bytes=$startByte-$endByte")
+                    .build()
+
+                httpClient.newCall(req).execute().use { response ->
+                    if (response.code == 416) {
+                        return ByteArray(0)
+                    }
+                    if (!response.isSuccessful && response.code != 206) {
+                        throw IOException("HTTP ${response.code}")
+                    }
+
+                    val cType = response.header("Content-Type")
+                    if (!cType.isNullOrBlank()) {
+                        contentTypeCache[songKey] = cType
+                    }
+
+                    val contentRange = response.header("Content-Range")
+                    if (!contentRange.isNullOrBlank()) {
+                        val totalStr = contentRange.substringAfterLast("/").trim()
+                        val parsedTotal = totalStr.toLongOrNull()
+                        if (parsedTotal != null && parsedTotal > 0L) {
+                            totalLengthCache[songKey] = parsedTotal
+                            knownTotal = parsedTotal
+                            saveCachedMeta(songKey, songDir)
                         }
-                        if (!response.isSuccessful && response.code != 206) {
-                            throw IOException("HTTP ${response.code}")
+                    } else if (chunkIndex == 0L && response.code == 200) {
+                        val fullLen = response.body?.contentLength() ?: -1L
+                        if (fullLen > 0L) {
+                            totalLengthCache[songKey] = fullLen
+                            knownTotal = fullLen
+                            saveCachedMeta(songKey, songDir)
                         }
+                    }
 
-                        val cType = response.header("Content-Type")
-                        if (!cType.isNullOrBlank()) {
-                            contentTypeCache[songKey] = cType
-                        }
-
-                        val contentRange = response.header("Content-Range")
-                        if (!contentRange.isNullOrBlank()) {
-                            val totalStr = contentRange.substringAfterLast("/").trim()
-                            val parsedTotal = totalStr.toLongOrNull()
-                            if (parsedTotal != null && parsedTotal > 0L) {
-                                totalLengthCache[songKey] = parsedTotal
-                                saveCachedMeta(songKey, songDir)
-                            }
-                        } else if (chunkIndex == 0L && response.code == 200) {
-                            val fullLen = response.body?.contentLength() ?: -1L
-                            if (fullLen > 0L) {
-                                totalLengthCache[songKey] = fullLen
-                                saveCachedMeta(songKey, songDir)
-                            }
-                        }
-
-                        val bytes = response.body?.bytes() ?: throw IOException("Empty chunk body")
-                        if (bytes.isNotEmpty()) {
-                            synchronized(lock) {
-                                val tmp = File(songDir, "chunk_${chunkIndex}.tmp")
-                                tmp.writeBytes(bytes)
-                                if (!tmp.renameTo(chunkFile)) {
+                    val bytes = response.body?.bytes() ?: throw IOException("Empty chunk body")
+                    if (bytes.isNotEmpty()) {
+                        val tmp = File(songDir, "chunk_${chunkIndex}_${System.currentTimeMillis()}.tmp")
+                        try {
+                            tmp.writeBytes(bytes)
+                            if (!tmp.renameTo(chunkFile)) {
+                                if (!chunkFile.exists()) {
                                     tmp.copyTo(chunkFile, overwrite = true)
-                                    tmp.delete()
                                 }
                             }
+                        } catch (_: Exception) {
+                            // File write/delete failed on Windows; data is still valid in memory
+                        } finally {
+                            try { tmp.delete() } catch (_: Exception) {}
                         }
-                        return bytes
                     }
-                } catch (e: Exception) {
-                    attempt++
-                    Log.w(TAG, "Chunk $chunkIndex for $songKey failed (attempt $attempt/$MAX_CHUNK_RETRIES): ${e.message}")
-                    if (attempt < MAX_CHUNK_RETRIES) {
-                        delay(backoffDelays[(attempt - 1).coerceAtMost(backoffDelays.lastIndex)])
-                    }
+                    return bytes
+                }
+            } catch (e: Exception) {
+                attempt++
+                Log.w(TAG, "Chunk $chunkIndex for $songKey failed (attempt $attempt/$MAX_CHUNK_RETRIES): ${e.message}")
+                if (attempt < MAX_CHUNK_RETRIES) {
+                    delay(backoffDelays[(attempt - 1).coerceAtMost(backoffDelays.lastIndex)])
                 }
             }
-            null
-        } finally {
-            inFlightChunks.remove(lockKey)
         }
+        return null
     }
 
     private fun loadCachedMeta(songKey: String, songDir: File) {

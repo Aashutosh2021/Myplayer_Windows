@@ -161,14 +161,17 @@ class MasterAudioDspProcessor @Inject constructor() : BaseAudioProcessor() {
 
         val loudnessDb = when (st.loudnessMode) {
             LoudnessMode.OFF -> 0f
-            LoudnessMode.TRACK -> (-14.0f - currentTrackLufs).coerceIn(-6f, 6f)
-            LoudnessMode.ALBUM -> (-14.0f - (currentTrackLufs - 1.0f)).coerceIn(-6f, 5f)
+            LoudnessMode.TRACK -> (-14.0f - currentTrackLufs).coerceIn(-6f, 4f)
+            LoudnessMode.ALBUM -> (-14.0f - (currentTrackLufs - 1.0f)).coerceIn(-6f, 3.5f)
         }
         val bitPerfect = st.bitPerfectMode || st.usbExclusiveOutput
 
-        // 1) Kotlin EQ is ALWAYS configured, so failover to it is instant and glitch-free.
-        //    Same +1 dB pre-limiter boost as the native engine when EQ is on.
-        val preampDb = loudnessDb + if (st.eqEnabled) 1.0f else 0.0f
+        // 1) Kotlin EQ is ALWAYS configured with automatic anti-clipping headroom compensation:
+        //    When EQ bands have positive boost (e.g. Bass Boost / Studio Master), attenuate preamp
+        //    proportionally so 0 dBFS mastered tracks never overdrive or sound like a blown speaker.
+        val maxPositiveBoostDb = if (st.eqEnabled) (gains.maxOrNull()?.coerceAtLeast(0f) ?: 0f) else 0f
+        val headroomPadDb = if (st.eqEnabled && maxPositiveBoostDb > 0f) -(maxPositiveBoostDb * 0.60f) else 0f
+        val preampDb = (loudnessDb + headroomPadDb).coerceIn(-12f, 3f)
         synchronized(eqLock) { kotlinEq.configure(sr, gains, st.eqEnabled, preampDb) }
 
         // 2) Native engine (preferred: also carries the Studio Clarity chain).
@@ -303,7 +306,7 @@ class MasterAudioDspProcessor @Inject constructor() : BaseAudioProcessor() {
 
         fun process(buf: ByteBuffer, byteOffset: Int, frames: Int, channels: Int, isFloat: Boolean) {
             val idxs = activeIdx
-            if (idxs.isEmpty() && preamp == 1.0) return
+            if (idxs.isEmpty() && abs(preamp - 1.0) < 0.001) return
 
             val bytesPer = if (isFloat) 4 else 2
             val ch = if (channels >= 2) 2 else 1

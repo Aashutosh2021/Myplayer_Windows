@@ -16,6 +16,7 @@ import javax.sound.sampled.AudioSystem
 import javax.sound.sampled.SourceDataLine
 import kotlin.math.abs
 import kotlin.math.ln
+import kotlin.math.max
 
 object DesktopAudioBackend {
     private var mediaPlayer: MediaPlayer? = null
@@ -27,10 +28,12 @@ object DesktopAudioBackend {
      * Desktop DSP warm path: VLC's callback aout (amem) pushes S16N PCM into
      * DesktopMyPlayerDspPipeline (master EQ -> 3D Spatial / Atmos -> Audio Lab spatial/reverb/loudness -> volume stage)
      * and the output is written to a Java Sound line. When this fails the player silently falls
-     * back to VLC's native output (which only carries the native equalizer).
+     * back to VLC's native output (which also carries the native equalizer with headroom protection).
      */
-    private val CALLBACK_RATE = 48000
-    private val CALLBACK_CHANNELS = 2
+    private const val CALLBACK_RATE = 48000
+    private const val CALLBACK_CHANNELS = 2
+    private const val BYTES_PER_SAMPLE = 2
+    private const val BLOCK_ALIGN = CALLBACK_CHANNELS * BYTES_PER_SAMPLE // 4 bytes per stereo frame
     private var soundLine: SourceDataLine? = null
     private var currentRate: Float = 1f
 
@@ -61,7 +64,13 @@ object DesktopAudioBackend {
                 System.setProperty("jna.library.path", vlcDir.absolutePath)
             }
             NativeDiscovery().discover()
-            val factory = MediaPlayerFactory("--no-video", "--quiet", "--network-caching=1500")
+            val factory = MediaPlayerFactory(
+                "--no-video",
+                "--quiet",
+                "--network-caching=1500",
+                "--file-caching=1000",
+                "--audio-resampler=soxr"
+            )
             mediaPlayerFactory = factory
             val player = factory.mediaPlayers().newMediaPlayer()
             player.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
@@ -153,7 +162,17 @@ object DesktopAudioBackend {
         onPlayingChangedCallback?.invoke(true)
     }
 
-    /** Switches VLC to its callback audio output: PCM streams through the Kotlin DSP chain. */
+    /**
+     * Switches VLC to its callback audio output: PCM streams through the Kotlin DSP chain.
+     *
+     * CRITICAL FIX FOR "FATA HUA SPEAKER" (AUDIO DISTORTION):
+     * 1. In vlcj's `DefaultAudioCallbackAdapter(blockSize)`, the 3rd parameter to `onPlay` is
+     *    `sampleCount` (number of stereo frames), while `samples` is allocated with
+     *    `sampleCount * blockSize` bytes (`sampleCount * 4` bytes). Passing `sampleCount` as
+     *    `byteCount` previously dropped 75% of every audio frame and misaligned odd byte counts!
+     * 2. `line.open` buffer size is now properly divided by 1000 (`~150 ms` = 28,800 bytes aligned
+     *    to 4-byte stereo frames) instead of 23 MB (120 seconds).
+     */
     private fun enableCallbackAudio() {
         val player = requireNotNull(mediaPlayer)
         DesktopMyPlayerDspPipeline.install()
@@ -161,20 +180,37 @@ object DesktopAudioBackend {
             CALLBACK_RATE.toFloat(), 16, CALLBACK_CHANNELS, true, false
         )
         val line = AudioSystem.getSourceDataLine(lineFormat)
-        // ~120 ms ring: enough slack for DSP spikes, small enough to keep pauses tight.
-        line.open(lineFormat, CALLBACK_RATE * CALLBACK_CHANNELS * 2 * 120)
+        // ~150 ms hardware buffer aligned to 4-byte stereo frames: smooth glitch-free playback & snappy pause/seek
+        val bufferBytes = (((CALLBACK_RATE * BLOCK_ALIGN * 150) / 1000) / BLOCK_ALIGN) * BLOCK_ALIGN
+        line.open(lineFormat, bufferBytes)
         line.start()
         soundLine = line
-        val adapter = object : DefaultAudioCallbackAdapter(CALLBACK_CHANNELS * 2) {
+        val adapter = object : DefaultAudioCallbackAdapter(BLOCK_ALIGN) {
             override fun onPlay(
                 mediaPlayer: MediaPlayer?,
                 samples: ByteArray,
-                byteCount: Int,
+                sampleCount: Int,
                 pts: Long
             ) {
                 try {
-                    val frame = DesktopMyPlayerDspPipeline.process(samples, byteCount)
-                    soundLine?.write(frame, 0, frame.size)
+                    // `samples` length is `sampleCount * BLOCK_ALIGN` bytes; ensure strict 4-byte stereo frame alignment.
+                    val rawBytes = if (sampleCount > 0) {
+                        minOf(samples.size, sampleCount * BLOCK_ALIGN)
+                    } else {
+                        samples.size
+                    }
+                    val alignedByteCount = (rawBytes / BLOCK_ALIGN) * BLOCK_ALIGN
+                    if (alignedByteCount <= 0) return
+
+                    val frame = DesktopMyPlayerDspPipeline.process(samples, alignedByteCount)
+                    val writeLen = (frame.size / BLOCK_ALIGN) * BLOCK_ALIGN
+                    if (writeLen > 0) {
+                        val activeLine = soundLine
+                        if (activeLine != null) {
+                            if (!activeLine.isRunning) activeLine.start()
+                            activeLine.write(frame, 0, writeLen)
+                        }
+                    }
                 } catch (t: Throwable) {
                     println("[DesktopAudioBackend] DSP play failed: ${t.message}")
                 }
@@ -196,12 +232,18 @@ object DesktopAudioBackend {
                 try { soundLine?.drain() } catch (_: Throwable) {}
             }
 
-            override fun setVolume(volume: Float, mute: Boolean) {}
+            override fun setVolume(volume: Float, mute: Boolean) {
+                if (mute) {
+                    DesktopMyPlayerDspPipeline.setPlayerVolume(0f)
+                } else if (volume in 0f..1.5f) {
+                    DesktopMyPlayerDspPipeline.setPlayerVolume(volume.coerceIn(0f, 1f))
+                }
+            }
         }
         player.audio().callback("S16N", CALLBACK_RATE, CALLBACK_CHANNELS, adapter)
         DesktopMyPlayerDspPipeline.beginStream(CALLBACK_RATE, CALLBACK_CHANNELS)
         DesktopMyPlayerDspPipeline.markCallbackMode()
-        println("[DesktopAudioBackend] DSP callback chain live (S16N ${CALLBACK_RATE}Hz x${CALLBACK_CHANNELS}).")
+        println("[DesktopAudioBackend] DSP callback chain live (S16N ${CALLBACK_RATE}Hz x${CALLBACK_CHANNELS}, buffer=${bufferBytes}B).")
     }
 
     fun pause() {
@@ -348,8 +390,11 @@ object DesktopAudioBackend {
                     return
                 }
                 val equalizer = Equalizer(VLC_EQ_BAND_COUNT)
-                equalizer.setPreamp(loudnessPreampDb.coerceIn(VLC_AMP_MIN_DB, VLC_AMP_MAX_DB))
                 val amps = foldIsoGainsToVlcBins(eqBandGains.takeIf { eqEnabled })
+                val maxBoost = amps.maxOrNull()?.coerceAtLeast(0f) ?: 0f
+                // Automatic anti-clipping headroom when EQ bands are boosted
+                val safePreamp = (loudnessPreampDb - maxBoost * 0.55f).coerceIn(VLC_AMP_MIN_DB, 6f)
+                equalizer.setPreamp(safePreamp)
                 for (bin in 0 until VLC_EQ_BAND_COUNT) {
                     equalizer.setAmp(bin, amps[bin].coerceIn(VLC_AMP_MIN_DB, VLC_AMP_MAX_DB))
                 }

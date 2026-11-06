@@ -12,7 +12,8 @@ import com.example.myplayer.playback.dsp.SpatialAudioProcessor as SurroundSpatia
 import com.example.myplayer.ui.myplayer.MyPlayerAudioFxDspBridge
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import kotlin.math.min
+import kotlin.math.roundToInt
+import kotlin.math.tanh
 
 /**
  * Desktop replacement for Android's ExoPlayer `DefaultAudioSink` DSP chain (`di/PlayerModule.kt`).
@@ -23,7 +24,7 @@ import kotlin.math.min
  * 3. [SpatialAudioProcessor] (Audio Lab 3D Soundstage)
  * 4. [ReverbAudioProcessor] (Audio Lab Freeverb Room Reverb)
  * 5. [LoudnessAudioProcessor] (Audio Lab Loudness Boost)
- * 6. Exponential Volume Curve + ReplayGain normalization stage
+ * 6. Exponential Volume Curve + ReplayGain normalization stage with soft-knee anti-clipping limiter
  */
 object DesktopMyPlayerDspPipeline {
 
@@ -45,6 +46,10 @@ object DesktopMyPlayerDspPipeline {
     private var configuredSampleRate = 0
     private var configuredChannels = 0
     private var replayGain = ReplayGainTags()
+
+    // Reusable direct buffer to eliminate per-callback GC churn & direct memory fragmentation
+    private var stagingBuffer: ByteBuffer = ByteBuffer.allocateDirect(65536).order(ByteOrder.nativeOrder())
+    private val dspProcessLock = Any()
 
     @Volatile private var volumeGain = 1f
     @Volatile private var lastVolume = 1f
@@ -116,66 +121,104 @@ object DesktopMyPlayerDspPipeline {
     /** Track change: drop the processors' buffered state so reverb tails don't bleed across songs. */
     @Synchronized
     fun onTrackChange() {
-        for (processor in chain) {
-            if (processor.isActive()) {
-                processor.flush()
+        synchronized(dspProcessLock) {
+            for (processor in chain) {
+                if (processor.isActive()) {
+                    processor.flush()
+                }
             }
         }
     }
 
     /**
-     * Processes one interleaved S16N block (VLC native byte order) in place; returns the array
-     * holding the processed samples (input when inactive stages pass it through untouched).
+     * Processes one interleaved S16N block (VLC native byte order) and returns a frame-aligned
+     * PCM byte array ready for JavaSound `SourceDataLine.write`.
      */
     fun process(input: ByteArray, byteCount: Int): ByteArray {
+        val safeBytes = (minOf(input.size, byteCount) / 4) * 4
+        if (safeBytes <= 0) return ByteArray(0)
+
         computeGain()
-        var buffer = ByteBuffer.allocateDirect(byteCount).order(ByteOrder.nativeOrder())
-        buffer.put(input, 0, byteCount)
-        buffer.flip()
-        for (processor in chain) {
-            if (!processor.isActive()) continue
-            buffer.position(0)
-            buffer.limit(byteCount)
-            try {
-                processor.queueInput(buffer)
-                buffer = processor.getOutput()
-            } catch (t: Throwable) {
-                println("[DesktopMyPlayerDspPipeline] ${processor.javaClass.simpleName} threw: ${t.message}")
-                continue
+        synchronized(dspProcessLock) {
+            if (stagingBuffer.capacity() < safeBytes) {
+                stagingBuffer = ByteBuffer.allocateDirect(safeBytes * 2).order(ByteOrder.nativeOrder())
             }
-            buffer.position(0)
+            stagingBuffer.clear()
+            stagingBuffer.put(input, 0, safeBytes)
+            stagingBuffer.flip()
+
+            var buffer: ByteBuffer = stagingBuffer
+            for (processor in chain) {
+                if (!processor.isActive()) continue
+                val currentRemaining = buffer.remaining()
+                if (currentRemaining <= 0) break
+                try {
+                    processor.queueInput(buffer)
+                    val outBuf = processor.getOutput()
+                    if (outBuf.remaining() > 0) {
+                        outBuf.order(ByteOrder.nativeOrder())
+                        buffer = outBuf
+                    } else {
+                        // Processor did not emit output; rewind previous buffer so audio never drops out
+                        buffer.position(0)
+                    }
+                } catch (t: Throwable) {
+                    println("[DesktopMyPlayerDspPipeline] ${processor.javaClass.simpleName} threw: ${t.message}")
+                    buffer.position(0)
+                    continue
+                }
+            }
+
+            val remaining = (buffer.remaining() / 4) * 4
+            if (remaining <= 0) {
+                val fallback = input.copyOfRange(0, safeBytes)
+                if (volumeGain != 1f) applyGainWithSoftClip(fallback, volumeGain)
+                return fallback
+            }
+            val out = ByteArray(remaining)
+            buffer.get(out, 0, remaining)
+            if (volumeGain != 1f) applyGainWithSoftClip(out, volumeGain)
+            return out
         }
-        val remaining = min(buffer.remaining(), byteCount)
-        if (remaining <= 0) return input
-        val out = ByteArray(remaining)
-        buffer.get(out)
-        if (volumeGain != 1f) applyGain(out, volumeGain)
-        return out
     }
 
     /** Applies the MyPlayerVolumeSink math: curve.gain(requested) * replayGain factor. */
     @Synchronized
     fun setPlayerVolume(volume: Float) {
-        if (lastVolume != volume) {
-            lastVolume = volume
+        val clamped = volume.coerceIn(0f, 1f)
+        if (lastVolume != clamped) {
+            lastVolume = clamped
             computeGain()
         }
     }
 
     private fun computeGain() {
-        val audioFx = fx ?: return
+        val audioFx = fx
+        if (audioFx == null) {
+            volumeGain = lastVolume
+            return
+        }
         try {
-            volumeGain = audioFx.volumeCurve.gain(lastVolume) *
+            val rawGain = audioFx.volumeCurve.gain(lastVolume) *
                 replayGain.linear(audioFx.replayGain, audioFx.normalize)
+            // Prevent overdrive above unity unless ReplayGain specifically requests a small safe lift
+            volumeGain = rawGain.coerceIn(0f, 1.15f)
         } catch (_: Throwable) {
-            volumeGain = 1f
+            volumeGain = lastVolume
         }
     }
 
-    private fun applyGain(pcm: ByteArray, gain: Float) {
+    private fun applyGainWithSoftClip(pcm: ByteArray, gain: Float) {
+        val g = gain.toDouble()
         for (i in 0 until pcm.size - 1 step 2) {
             val sample = ((pcm[i].toInt() and 0xFF) or (pcm[i + 1].toInt() shl 8)).toShort().toInt()
-            val scaled = (sample * gain).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+            var normalized = (sample / 32768.0) * g
+            if (normalized > 0.92 || normalized < -0.92) {
+                val sign = if (normalized >= 0.0) 1.0 else -1.0
+                val absVal = kotlin.math.abs(normalized)
+                normalized = sign * (0.92 + 0.075 * tanh((absVal - 0.92) / 0.075))
+            }
+            val scaled = (normalized * 32767.0).roundToInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
             pcm[i] = (scaled and 0xFF).toByte()
             pcm[i + 1] = (scaled shr 8).toByte()
         }

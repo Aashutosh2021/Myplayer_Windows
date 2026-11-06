@@ -30,15 +30,31 @@ class MediaItemFactory @Inject constructor() {
             DesktopChunkStreamProxy.registerSongStream(cleanCacheKey, path)
         }
 
-        val uri = if (path.startsWith("/") || path.matches(Regex("^[a-zA-Z]:\\\\.*"))) {
-            Uri.fromFile(File(path))
+        val normalizedLocalPath = if (
+            path.startsWith("/") ||
+            path.startsWith("file:", ignoreCase = true) ||
+            path.matches(Regex("^[a-zA-Z]:[\\\\/].*"))
+        ) {
+            Uri.normalizeToFilePath(path) ?: path
+        } else {
+            null
+        }
+
+        val uri = if (normalizedLocalPath != null) {
+            Uri.fromFile(File(normalizedLocalPath))
         } else {
             Uri.parse(path)
         }
 
         val resolvedArtUri = when {
-            !albumArt.isNullOrBlank() && (albumArt.startsWith("/") || albumArt.matches(Regex("^[a-zA-Z]:\\\\.*"))) ->
-                Uri.fromFile(File(albumArt))
+            !albumArt.isNullOrBlank() && (
+                albumArt.startsWith("/") ||
+                albumArt.startsWith("file:", ignoreCase = true) ||
+                albumArt.matches(Regex("^[a-zA-Z]:[\\\\/].*"))
+            ) -> {
+                val cleanArtPath = Uri.normalizeToFilePath(albumArt) ?: albumArt
+                Uri.fromFile(File(cleanArtPath))
+            }
             !albumArt.isNullOrBlank() -> Uri.parse(albumArt)
             else -> null
         }

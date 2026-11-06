@@ -46,10 +46,14 @@ class PlaybackRouter @Inject constructor(
     private var lastIndex: Int = 0
 
     private fun isOnlineRequest(request: PlayRequest): Boolean {
+        val localUri = request.localUri
+        if (!localUri.isNullOrBlank() && sourceResolver.resolveExistingLocalFile(localUri, request.title, request.songId) != null) {
+            return false
+        }
         return request.playbackSource == PlaybackSourceType.ONLINE ||
                 request.playbackSource == PlaybackSourceType.RECOMMENDATION ||
-                request.localUri?.startsWith("online://") == true ||
-                request.localUri?.startsWith("http") == true
+                localUri?.startsWith("online://") == true ||
+                localUri?.startsWith("http") == true
     }
 
     @Synchronized
@@ -177,9 +181,12 @@ class PlaybackRouter @Inject constructor(
                         if (i == clampedIndex) {
                             currentMediaItem
                         } else {
+                            val resolvedLocalPath = withContext(Dispatchers.IO) {
+                                sourceResolver.resolveExistingLocalFile(r.localUri, r.title, r.songId)?.absolutePath
+                            } ?: (r.localUri ?: "")
                             mediaItemFactory.createMediaItem(
                                 songId = r.songId,
-                                path = r.localUri ?: "",
+                                path = resolvedLocalPath,
                                 title = r.title,
                                 artist = r.artist,
                                 albumArt = r.albumArt

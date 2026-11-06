@@ -33,7 +33,8 @@ compose.desktop {
         nativeDistributions {
             targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe)
             packageName = "MyPlayer"
-            packageVersion = "2.0.0"
+            packageVersion = "2.0.1"
+            appResourcesRootDir.set(project.layout.projectDirectory.dir("package-resources"))
             modules(
                 "java.base",
                 "java.desktop",
@@ -53,7 +54,20 @@ compose.desktop {
             windows {
                 menuGroup = "MyPlayer"
                 upgradeUuid = "68c22756-3474-4ec5-b006-258d4a9ec110"
+                dirChooser = true
+                shortcut = true
+                menu = true
             }
+        }
+    }
+}
+
+tasks.matching { it.name.contains("package", ignoreCase = true) && (it.name.contains("Exe") || it.name.contains("Msi")) }.configureEach {
+    doFirst {
+        val resDir = project.layout.buildDirectory.dir("compose/tmp/resources").get().asFile
+        resDir.mkdirs()
+        file("package-resources/windows").listFiles()?.forEach { f ->
+            f.copyTo(File(resDir, f.name), overwrite = true)
         }
     }
 }

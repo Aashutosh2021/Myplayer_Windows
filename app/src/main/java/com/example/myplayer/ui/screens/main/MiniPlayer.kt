@@ -117,11 +117,12 @@ fun MiniPlayer(
         label = "miniSwipe"
     )
 
-    // Outer full-width alignment wrapper so the 45%-smaller MiniPlayer sits centered at the bottom
+    // Outer full-width transparent wrapper so screen content shows behind and around the floating MiniPlayer (like Android)
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 3.dp),
+            .background(Color.Transparent)
+            .padding(horizontal = 12.dp, vertical = 4.dp),
         contentAlignment = Alignment.BottomCenter
     ) {
         // Compact 55%-width container (~45% smaller than before!)

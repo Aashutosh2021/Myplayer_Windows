@@ -1,5 +1,7 @@
 package com.example.myplayer.playback
 
+import android.content.Context
+import android.os.Environment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -12,11 +14,12 @@ import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter
 import uk.co.caprica.vlcj.player.base.callback.DefaultAudioCallbackAdapter
 import com.example.myplayer.myplayerfx.DesktopMyPlayerDspPipeline
 import java.io.File
+import java.net.URI
+import java.net.URLDecoder
 import javax.sound.sampled.AudioSystem
 import javax.sound.sampled.SourceDataLine
 import kotlin.math.abs
 import kotlin.math.ln
-import kotlin.math.max
 
 object DesktopAudioBackend {
     private var mediaPlayer: MediaPlayer? = null
@@ -59,6 +62,8 @@ object DesktopAudioBackend {
 
     fun init() {
         try {
+            // Ensure JNA passes UTF-8 strings to libVLC on Windows
+            System.setProperty("jna.encoding", "UTF-8")
             val vlcDir = File("C:\\Program Files\\VideoLAN\\VLC")
             if (vlcDir.exists()) {
                 System.setProperty("jna.library.path", vlcDir.absolutePath)
@@ -125,14 +130,78 @@ object DesktopAudioBackend {
         }
     }
 
-    fun play(pathOrUri: String, startPositionMs: Long = 0L) {
-        val rawCleanPath = when {
-            pathOrUri.startsWith("file://") -> pathOrUri.removePrefix("file://")
-            pathOrUri.startsWith("file:/") -> pathOrUri.removePrefix("file:")
-            else -> pathOrUri
+    /**
+     * Resolves a Windows/Desktop local file path or `file:` URI into an existing [File] on disk,
+     * properly decoding `%20` spaces and stripping leading `/C:/` slashes on Windows.
+     */
+    fun resolveLocalFile(pathOrUri: String?): File? {
+        if (pathOrUri.isNullOrBlank()) return null
+        val trimmed = pathOrUri.trim()
+        if (trimmed.startsWith("http://", ignoreCase = true) ||
+            trimmed.startsWith("https://", ignoreCase = true) ||
+            trimmed.startsWith("online://", ignoreCase = true)
+        ) {
+            return null
         }
-        // Route online HTTP/HTTPS streams through our Spotify-style 9-Second Chunk Proxy
-        val cleanPath = DesktopChunkStreamProxy.wrapUrlIfNeeded(rawCleanPath)
+
+        val candidates = mutableListOf<File>()
+
+        // 1. Direct File check
+        candidates.add(File(trimmed))
+
+        // 2. If it starts with file:, try URI constructor and URL-decoded path
+        if (trimmed.startsWith("file:", ignoreCase = true)) {
+            runCatching { File(URI(trimmed)) }.getOrNull()?.let { candidates.add(it) }
+            val stripped = trimmed
+                .removePrefix("file:///")
+                .removePrefix("file://")
+                .removePrefix("file:/")
+                .removePrefix("file:")
+            val decoded = runCatching { URLDecoder.decode(stripped, "UTF-8") }.getOrDefault(stripped.replace("%20", " "))
+            val winFixed = if (decoded.matches(Regex("^/[a-zA-Z]:[\\\\/].*"))) decoded.substring(1) else decoded
+            candidates.add(File(winFixed))
+        } else {
+            // 3. Also try URL-decoding and stripping leading /C:/ if present
+            val decoded = runCatching { URLDecoder.decode(trimmed, "UTF-8") }.getOrDefault(trimmed.replace("%20", " "))
+            val winFixed = if (decoded.matches(Regex("^/[a-zA-Z]:[\\\\/].*"))) decoded.substring(1) else decoded
+            candidates.add(File(winFixed))
+        }
+
+        for (candidate in candidates) {
+            if (candidate.exists() && candidate.isFile && candidate.length() > 0L) {
+                return candidate
+            }
+        }
+
+        // 4. Fallback: check ~/.myplayer/files/Music by file name
+        val fileName = candidates.firstOrNull()?.name?.takeIf { it.isNotBlank() }
+        if (fileName != null) {
+            val musicDir = Context.DEFAULT.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: Context.DEFAULT.filesDir
+            val inMusicDir = File(musicDir, fileName)
+            if (inMusicDir.exists() && inMusicDir.isFile && inMusicDir.length() > 0L) {
+                return inMusicDir
+            }
+        }
+
+        return null
+    }
+
+    fun play(pathOrUri: String, startPositionMs: Long = 0L) {
+        // 1. Check if pathOrUri resolves to a local / downloaded file on disk.
+        // If so, serve it via DesktopChunkStreamProxy.wrapLocalFile(localFile) (`http://127.0.0.1:<port>/local?id=...`)
+        // so libVLC plays it over loopback HTTP with 0 Windows path, `%20`, or Unicode encoding issues!
+        val localFile = resolveLocalFile(pathOrUri)
+        val cleanPath = if (localFile != null) {
+            DesktopChunkStreamProxy.wrapLocalFile(localFile)
+        } else {
+            val rawCleanPath = when {
+                pathOrUri.startsWith("file://") -> pathOrUri.removePrefix("file://")
+                pathOrUri.startsWith("file:/") -> pathOrUri.removePrefix("file:")
+                else -> pathOrUri
+            }
+            // Route online HTTP/HTTPS streams through our Spotify-style 9-Second Chunk Proxy
+            DesktopChunkStreamProxy.wrapUrlIfNeeded(rawCleanPath)
+        }
 
         if (cleanPath == currentPath && isPaused && startPositionMs <= 0L) {
             resume()

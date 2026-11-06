@@ -78,7 +78,13 @@ fun FloatingNavBar(
         }
 
         bottomNavItems.forEach { item ->
-            val isSelected = currentRoute == item.route
+            val isSelected = currentRoute == item.route ||
+                (item.route == Screen.Settings.route && currentRoute in setOf(
+                    Screen.DualBud.route, Screen.SyncPlay.route, Screen.AudioPlayback.route,
+                    Screen.MyPlayerAudioLab.route, Screen.MyPlayerEqualizer.route,
+                    Screen.MyPlayerAppearance.route, Screen.RemoteNotifications.route
+                )) ||
+                (item.route == Screen.Library.route && currentRoute?.startsWith("playlist_detail") == true)
             val tint by animateColorAsState(
                 targetValue = if (isSelected) CharcoalPrimary else SilverMuted,
                 animationSpec = tween(180),

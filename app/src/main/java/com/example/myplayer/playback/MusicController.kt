@@ -706,7 +706,8 @@ class MusicController @Inject constructor(
         }
 
         if (currentItem != null) {
-            val isOnline = uriStr?.startsWith("http") == true || uriStr?.startsWith("online://") == true || (mediaId != null && mediaId.length == 11)
+            val isLocal = isLocalFilePath(uriStr) || (song != null && isLocalFilePath(song.path))
+            val isOnline = !isLocal && (uriStr?.startsWith("http") == true || uriStr?.startsWith("online://") == true || (mediaId != null && mediaId.length == 11))
             if (isOnline && !mediaId.isNullOrBlank()) {
                 val metadata = currentItem.mediaMetadata
                 val art = song?.albumArt ?: metadata.artworkUri?.toString() ?: "https://img.youtube.com/vi/$mediaId/hqdefault.jpg"
@@ -720,14 +721,35 @@ class MusicController @Inject constructor(
                     streamUrl = uriStr ?: "online://$mediaId"
                 )
                 playbackStateManager.updateCurrentOnlineSong(onlineSong)
+            } else if (isLocal) {
+                playbackStateManager.updateCurrentOnlineSong(null)
             }
         }
     }
 
     // ── Online Playback Recovery Helpers ──────────────────────────────────────
 
+    private fun isLocalFilePath(path: String?): Boolean {
+        if (path.isNullOrBlank()) return false
+        if (path.startsWith("http://", ignoreCase = true) ||
+            path.startsWith("https://", ignoreCase = true) ||
+            path.startsWith("online://", ignoreCase = true)
+        ) {
+            return false
+        }
+        if (path.startsWith("/") ||
+            path.startsWith("content://", ignoreCase = true) ||
+            path.startsWith("file:", ignoreCase = true) ||
+            path.matches(Regex("^[a-zA-Z]:[\\\\/].*"))
+        ) {
+            return DesktopAudioBackend.resolveLocalFile(path) != null || java.io.File(path).exists()
+        }
+        return DesktopAudioBackend.resolveLocalFile(path) != null
+    }
+
     private fun isOnlineTrack(mediaId: String?, uriStr: String?): Boolean {
         if (mediaId.isNullOrBlank() && uriStr.isNullOrBlank()) return false
+        if (isLocalFilePath(uriStr)) return false
         if (uriStr?.startsWith("http://") == true ||
             uriStr?.startsWith("https://") == true ||
             uriStr?.startsWith("online://") == true) {
@@ -736,10 +758,8 @@ class MusicController @Inject constructor(
         val queueItem = _songQueue.firstOrNull { it.id == mediaId || it.videoId == mediaId }
         if (queueItem != null) {
             val path = queueItem.path
+            if (isLocalFilePath(path)) return false
             if (path.startsWith("http") || path.startsWith("online://")) return true
-            if (path.startsWith("/") || path.startsWith("content://") || path.startsWith("file://")) {
-                if (java.io.File(path).exists()) return false
-            }
             if (!queueItem.videoId.isNullOrBlank()) return true
         }
         val onlineSong = playbackStateManager.currentOnlineSong.value
@@ -857,14 +877,12 @@ class MusicController @Inject constructor(
         playbackStateManager.updateCurrentOnlineSong(null)
 
         val requests = songs.map { song ->
-            val isOnline = song.path.startsWith("online://") || song.path.startsWith("http") ||
-                song.id.startsWith("spotify:") || song.id.startsWith("online://") ||
-                song.videoId != null
+            val isLocal = isLocalFilePath(song.path)
             PlayRequest(
                 songId = song.id,
                 title = song.title,
                 artist = song.artist,
-                playbackSource = if (isOnline) PlaybackSourceType.ONLINE else PlaybackSourceType.LOCAL,
+                playbackSource = if (isLocal) PlaybackSourceType.LOCAL else PlaybackSourceType.ONLINE,
                 localUri = song.path,
                 albumArt = song.albumArt
             )
@@ -1028,15 +1046,18 @@ class MusicController @Inject constructor(
         val targetEntity = _songQueue[index]
         val vId = targetEntity.videoId ?: targetEntity.id
         val artUrl = targetEntity.albumArt ?: "https://img.youtube.com/vi/$vId/hqdefault.jpg"
-        val onlineSong = OnlineSong(
-            videoId = vId,
-            title = targetEntity.title,
-            artist = targetEntity.artist,
-            thumbnailUrl = artUrl,
-            durationMs = targetEntity.duration,
-            durationText = "",
-            streamUrl = if (targetEntity.path.startsWith("http")) targetEntity.path else null
-        )
+        val isTargetLocal = isLocalFilePath(targetEntity.path)
+        val onlineSong = if (!isTargetLocal) {
+            OnlineSong(
+                videoId = vId,
+                title = targetEntity.title,
+                artist = targetEntity.artist,
+                thumbnailUrl = artUrl,
+                durationMs = targetEntity.duration,
+                durationText = "",
+                streamUrl = if (targetEntity.path.startsWith("http")) targetEntity.path else null
+            )
+        } else null
 
         playbackStateManager.updateCurrentSong(targetEntity)
         playbackStateManager.updateCurrentOnlineSong(onlineSong)
@@ -1046,7 +1067,7 @@ class MusicController @Inject constructor(
         val requests = _songQueue.map { entity ->
             val entityVid = entity.videoId ?: entity.id
             val entityArt = entity.albumArt ?: "https://img.youtube.com/vi/$entityVid/hqdefault.jpg"
-            val isLocalFile = entity.path.startsWith("/") || entity.path.startsWith("content://") || entity.path.startsWith("file://")
+            val isLocalFile = isLocalFilePath(entity.path)
             PlayRequest(
                 songId = entityVid,
                 title = entity.title,
@@ -1562,7 +1583,7 @@ class MusicController @Inject constructor(
     fun addSongToQueue(song: SongEntity) {
         _songQueue.add(song)
         _playbackQueue.value = _songQueue.toList()
-        val isOnline = song.path.startsWith("online://") || song.path.startsWith("http") || (song.videoId != null && song.videoId.length == 11)
+        val isOnline = !isLocalFilePath(song.path) && (song.path.startsWith("online://") || song.path.startsWith("http") || (song.videoId != null && song.videoId.length == 11))
         if (!isOnline && song.path.isNotBlank()) {
             runOnApplicationThread { controller ->
                 val mediaItem = MediaItem.Builder()
@@ -1588,9 +1609,10 @@ class MusicController @Inject constructor(
     fun playQueueIndex(index: Int) {
         if (index in _songQueue.indices) {
             val target = _songQueue[index]
-            val isOnline = target.path.startsWith("http") ||
+            val isOnline = !isLocalFilePath(target.path) && (
+                           target.path.startsWith("http") ||
                            target.path.startsWith("online://") ||
-                           (target.videoId != null && target.videoId.length == 11)
+                           (target.videoId != null && target.videoId.length == 11))
             val controller = mediaController
             val isMain = Looper.myLooper() == Looper.getMainLooper()
             val controllerItemCount = if (isMain) controller?.mediaItemCount ?: 0 else _songQueue.size

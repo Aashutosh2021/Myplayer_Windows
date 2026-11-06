@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
+import android.os.Environment
 import android.util.Log
 import com.example.myplayer.data.local.dao.DownloadedSongDao
 import com.example.myplayer.data.local.dao.SongDao
@@ -61,7 +62,18 @@ class PlaybackSourceResolver @Inject constructor(
             .trim()
         val mappedQuickId = spotifyToYoutubeIdCache[quickId] ?: prefs.getString(quickId, null) ?: quickId
 
-        // 1. ALWAYS check if song is downloaded locally FIRST!
+        // 1. Check if request.localUri directly points to an existing local/downloaded file on disk
+        val directLocalFile = withContext(Dispatchers.IO) {
+            resolveExistingLocalFile(localUri, request.title, quickId)
+        }
+        if (directLocalFile != null) {
+            val absPath = directLocalFile.absolutePath
+            Log.d("PlaybackSourceResolver", "Playing direct local file on Windows: $absPath")
+            _currentAudioQuality.value = losslessStreamResolver.inspectQuality(absPath, isLocalFile = true)
+            return absPath
+        }
+
+        // 2. ALWAYS check if song is downloaded locally in DB!
         // Ensures downloaded songs play from disk with 0 network usage even if recently played online.
         val downloaded = withContext(Dispatchers.IO) {
             try {
@@ -70,20 +82,15 @@ class PlaybackSourceResolver @Inject constructor(
                     ?: downloadedSongDao.getById(mappedQuickId)
             } catch (_: Exception) { null }
         }
-        if (downloaded != null && checkLocalFileExists(downloaded.localPath)) {
-            Log.d("PlaybackSourceResolver", "Playing from local downloaded file: ${downloaded.localPath}")
-            _currentAudioQuality.value = losslessStreamResolver.inspectQuality(downloaded.localPath, isLocalFile = true)
-            return downloaded.localPath
-        }
-
-        // 2. Pure local device audio file (Windows drive path or file:// URI)
-        if (!localUri.isNullOrBlank() &&
-            (localUri.startsWith("content://") || localUri.startsWith("file://") ||
-                localUri.startsWith("/") || localUri.matches(Regex("^[a-zA-Z]:\\\\.*")))
-        ) {
-            if (checkLocalFileExists(localUri)) {
-                _currentAudioQuality.value = losslessStreamResolver.inspectQuality(localUri, isLocalFile = true)
-                return localUri
+        if (downloaded != null) {
+            val resolvedDownloadFile = withContext(Dispatchers.IO) {
+                resolveExistingLocalFile(downloaded.localPath, downloaded.title, downloaded.id)
+            }
+            if (resolvedDownloadFile != null) {
+                val absPath = resolvedDownloadFile.absolutePath
+                Log.d("PlaybackSourceResolver", "Playing from local downloaded file: $absPath")
+                _currentAudioQuality.value = losslessStreamResolver.inspectQuality(absPath, isLocalFile = true)
+                return absPath
             }
         }
 
@@ -130,9 +137,15 @@ class PlaybackSourceResolver @Inject constructor(
                 val mappedDownload = withContext(Dispatchers.IO) {
                     try { downloadedSongDao.getById(existingYtId) } catch (_: Exception) { null }
                 }
-                if (mappedDownload != null && checkLocalFileExists(mappedDownload.localPath)) {
-                    _currentAudioQuality.value = losslessStreamResolver.inspectQuality(mappedDownload.localPath, isLocalFile = true)
-                    return mappedDownload.localPath
+                if (mappedDownload != null) {
+                    val mappedFile = withContext(Dispatchers.IO) {
+                        resolveExistingLocalFile(mappedDownload.localPath, mappedDownload.title, mappedDownload.id)
+                    }
+                    if (mappedFile != null) {
+                        val absPath = mappedFile.absolutePath
+                        _currentAudioQuality.value = losslessStreamResolver.inspectQuality(absPath, isLocalFile = true)
+                        return absPath
+                    }
                 }
             } else {
                 val qTitle = request.title.ifBlank { dbSong?.title ?: request.metadata["title"] ?: "" }
@@ -176,24 +189,51 @@ class PlaybackSourceResolver @Inject constructor(
         return resolveOnlineStream(cleanId, setCustomError, forceRefresh = false)
     }
 
-    private suspend fun checkLocalFileExists(filePath: String): Boolean = withContext(Dispatchers.IO) {
-        try {
-            if (filePath.startsWith("content://") || filePath.startsWith("file://")) {
-                val uri = Uri.parse(filePath)
-                if (uri.scheme == "file") {
-                    val f = File(uri.path ?: return@withContext false)
-                    return@withContext f.exists() && f.length() > 0L
-                }
-                context.contentResolver.openAssetFileDescriptor(uri, "r")?.use {
-                    it.length > 0
-                } ?: false
-            } else {
-                val file = File(filePath)
-                file.exists() && file.length() > 0L
+    /**
+     * Resolves any Windows/Desktop path (`C:\...`, `C:/...`, `file:/C:/...`, `file://...`, `%20`)
+     * or fallback file in `~/.myplayer/files/Music` into a verified existing non-empty [File].
+     */
+    fun resolveExistingLocalFile(
+        rawPath: String?,
+        titleHint: String? = null,
+        songIdHint: String? = null
+    ): File? {
+        if (!rawPath.isNullOrBlank()) {
+            val resolved = DesktopAudioBackend.resolveLocalFile(rawPath)
+            if (resolved != null && resolved.exists() && resolved.length() > 0L) {
+                return resolved
             }
-        } catch (e: Exception) {
-            false
         }
+
+        val musicDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
+        if (!musicDir.exists()) return null
+
+        if (!titleHint.isNullOrBlank()) {
+            val safeTitle = titleHint
+                .replace(Regex("[^a-zA-Z0-9 _\\-]"), "")
+                .replace(Regex(" {2,}"), " ")
+                .trim()
+                .take(60)
+            if (safeTitle.isNotBlank()) {
+                val byTitle = File(musicDir, "$safeTitle.m4a")
+                if (byTitle.exists() && byTitle.length() > 0L) return byTitle
+                if (!songIdHint.isNullOrBlank()) {
+                    val byTitleAndId = File(musicDir, "${safeTitle}_${songIdHint}.m4a")
+                    if (byTitleAndId.exists() && byTitleAndId.length() > 0L) return byTitleAndId
+                }
+            }
+        }
+
+        if (!songIdHint.isNullOrBlank() && songIdHint.length >= 6) {
+            val byId = File(musicDir, "$songIdHint.m4a")
+            if (byId.exists() && byId.length() > 0L) return byId
+        }
+
+        return null
+    }
+
+    private suspend fun checkLocalFileExists(filePath: String): Boolean = withContext(Dispatchers.IO) {
+        resolveExistingLocalFile(filePath) != null
     }
 
     suspend fun resolveFreshStreamUrl(

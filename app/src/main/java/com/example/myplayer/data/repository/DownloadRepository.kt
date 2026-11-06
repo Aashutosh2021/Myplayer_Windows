@@ -9,14 +9,29 @@ import com.example.myplayer.data.local.dao.SongDao
 import com.example.myplayer.data.local.entity.DownloadedSongEntity
 import com.example.myplayer.data.lyrics.LyricsRepository
 import com.example.myplayer.data.online.model.OnlineSong
+import com.example.myplayer.playback.DesktopAudioBackend
+import com.example.myplayer.playback.DesktopChunkStreamProxy
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -28,24 +43,22 @@ class DownloadRepository @Inject constructor(
     private val cachedLyricsDao: CachedLyricsDao,
     private val okHttpClient: OkHttpClient = OkHttpClient()
 ) {
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val _manualProgress = MutableStateFlow<Map<String, Int>>(emptyMap())
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val activeJobs = ConcurrentHashMap<String, Job>()
     private val lyricsRepository by lazy { LyricsRepository(context, okHttpClient, cachedLyricsDao) }
 
-    val downloadProgress: StateFlow<Map<String, Int>> = _manualProgress.asStateFlow()
+    private val _downloadProgress = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val downloadProgress: StateFlow<Map<String, Int>> = _downloadProgress.asStateFlow()
 
     fun setDownloadProgress(videoId: String, progress: Int) {
-        _manualProgress.update { it + (videoId to progress) }
+        _downloadProgress.update { it + (videoId to progress) }
     }
 
     fun removeDownload(videoId: String) {
-        _manualProgress.update { it - videoId }
+        _downloadProgress.update { it - videoId }
     }
 
-    fun isDownloading(videoId: String): Boolean {
-        return downloadProgress.value.containsKey(videoId)
-    }
+    fun isDownloading(videoId: String): Boolean = _downloadProgress.value.containsKey(videoId)
 
     fun getAllDownloads(): Flow<List<DownloadedSongEntity>> = downloadedSongDao.getAllDownloads()
 
@@ -57,9 +70,9 @@ class DownloadRepository @Inject constructor(
         downloadedSongDao.searchDownloads("")
 
     fun startDownload(song: OnlineSong): Boolean {
-        val streamUrl = song.streamUrl
-        if (streamUrl.isNullOrBlank()) {
-            Log.e("DownloadRepository", "[DOWNLOAD] No stream URL for ${song.videoId}")
+        val rawStreamUrl = DesktopChunkStreamProxy.unwrapUpstreamUrlIfProxy(song.streamUrl)
+        if (rawStreamUrl.isNullOrBlank() || !rawStreamUrl.startsWith("http")) {
+            Log.e("DownloadRepository", "[DOWNLOAD] No valid stream URL for ${song.videoId}")
             return false
         }
 
@@ -85,18 +98,26 @@ class DownloadRepository @Inject constructor(
                     .ifBlank { song.videoId }
 
                 val finalFileName = "$safeTitle.m4a"
-                val tmpFileName = "$safeTitle.tmp"
+                val tmpFileName = "${safeTitle}_${song.videoId}.tmp"
                 val destFile = File(musicDir, finalFileName)
                 val tempFile = File(musicDir, tmpFileName)
                 tempFileToClean = tempFile
 
-                val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                val chunkSize = 2L * 1024 * 1024 // 2 MB chunks with retry support for slow internet
+                // Match the User-Agent to the Innertube client that generated the googlevideo stream URL
+                val userAgent = when {
+                    rawStreamUrl.contains("c=IOS", ignoreCase = true) ->
+                        "com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X)"
+                    rawStreamUrl.contains("c=ANDROID", ignoreCase = true) ->
+                        "com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip"
+                    else ->
+                        "com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip"
+                }
+                val chunkSize = 512L * 1024L // 512 KB chunks for fast, reliable progress & zero CDN throttling
 
                 var totalSize = -1L
                 try {
                     val headReq = Request.Builder()
-                        .url(streamUrl)
+                        .url(rawStreamUrl)
                         .addHeader("User-Agent", userAgent)
                         .addHeader("Range", "bytes=0-0")
                         .build()
@@ -123,7 +144,7 @@ class DownloadRepository @Inject constructor(
                             while (attempt < 4 && !chunkSuccess) {
                                 try {
                                     val req = Request.Builder()
-                                        .url(streamUrl)
+                                        .url(rawStreamUrl)
                                         .addHeader("User-Agent", userAgent)
                                         .addHeader("Range", "bytes=$downloaded-$endOffset")
                                         .build()
@@ -142,16 +163,17 @@ class DownloadRepository @Inject constructor(
                                             val r = stream.read(buf)
                                             if (r == -1) break
                                             out.write(buf, 0, r)
+                                            downloaded += r
                                             chunkBytes += r
                                         }
+                                        out.flush()
                                         chunkBytes
                                     }
 
-                                    if (bytesReadThisChunk <= 0L) {
+                                    if (bytesReadThisChunk < 0L) {
                                         chunkSuccess = true
                                         downloaded = totalSize
                                     } else {
-                                        downloaded += bytesReadThisChunk
                                         chunkSuccess = true
                                     }
                                 } catch (e: Exception) {
@@ -166,7 +188,7 @@ class DownloadRepository @Inject constructor(
                         }
                     } else {
                         val req = Request.Builder()
-                            .url(streamUrl)
+                            .url(rawStreamUrl)
                             .addHeader("User-Agent", userAgent)
                             .build()
                         okHttpClient.newCall(req).execute().use { response ->
@@ -188,6 +210,7 @@ class DownloadRepository @Inject constructor(
                                     setDownloadProgress(song.videoId, 50)
                                 }
                             }
+                            out.flush()
                         }
                     }
                 }
@@ -254,7 +277,7 @@ class DownloadRepository @Inject constructor(
                     Log.w("DownloadRepository", "Could not auto-cache lyrics for ${song.videoId}: ${e.message}")
                 }
 
-                Log.i("DownloadRepository", "[DOWNLOAD] Completed successfully: ${song.title}")
+                Log.i("DownloadRepository", "[DOWNLOAD] Completed successfully: ${song.title} -> ${destFile.absolutePath}")
             } catch (e: Exception) {
                 Log.e("DownloadRepository", "[DOWNLOAD] Failed for ${song.videoId}: ${e.message}")
             } finally {
@@ -307,7 +330,7 @@ class DownloadRepository @Inject constructor(
                                 val companionJpg = File(parent, "${audioDestFile.nameWithoutExtension}.jpg")
                                 runCatching { companionJpg.writeBytes(bytes) }
                             }
-                            return Uri.fromFile(artFile).toString()
+                            return artFile.absolutePath
                         }
                     }
                 }
@@ -325,7 +348,7 @@ class DownloadRepository @Inject constructor(
                 val doc = androidx.documentfile.provider.DocumentFile.fromSingleUri(context, uri)
                 doc?.delete()
             } else {
-                val file = File(entity.localPath)
+                val file = DesktopAudioBackend.resolveLocalFile(entity.localPath) ?: File(entity.localPath)
                 file.parentFile?.let { parent ->
                     File(parent, "${file.nameWithoutExtension}.lrc").delete()
                     File(parent, "${file.nameWithoutExtension}.jpg").delete()
@@ -389,21 +412,12 @@ class DownloadRepository @Inject constructor(
                     continue
                 }
 
-                val fileExists = try {
-                    if (path.startsWith("content://") || path.startsWith("file://")) {
-                        val uri = Uri.parse(path)
-                        context.contentResolver.openAssetFileDescriptor(uri, "r")?.use {
-                            it.length > 0
-                        } ?: false
-                    } else {
-                        val file = File(path)
-                        file.exists() && file.length() > 0
+                val resolvedFile = DesktopAudioBackend.resolveLocalFile(path)
+                if (resolvedFile != null && resolvedFile.exists() && resolvedFile.length() > 0L) {
+                    if (resolvedFile.absolutePath != path) {
+                        downloadedSongDao.insert(download.copy(localPath = resolvedFile.absolutePath))
                     }
-                } catch (e: Exception) {
-                    false
-                }
-
-                if (!fileExists) {
+                } else {
                     toDelete.add(download.id)
                 }
             }

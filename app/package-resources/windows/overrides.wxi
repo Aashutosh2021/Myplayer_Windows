@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Custom WiX template for MyPlayer: enables automatic upgrade, reinstall, and replacement of previous versions -->
+<Include>
+  <?define JpAllowUpgrades = "yes" ?>
+  <?define JpAllowDowngrades = "yes" ?>
+</Include>
+

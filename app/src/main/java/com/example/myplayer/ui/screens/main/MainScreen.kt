@@ -2,6 +2,7 @@ package com.example.myplayer.ui.screens.main
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
 import androidx.compose.runtime.collectAsState
@@ -94,10 +95,6 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
 
     val isOnNowPlaying = currentRoute == Screen.NowPlaying.route
 
-    // Routes where the nav bar should be hidden
-    val hideNavRoutes = setOf(Screen.NowPlaying.route, Screen.DualBud.route, Screen.SyncPlay.route, Screen.AudioPlayback.route, Screen.MyPlayerAudioLab.route, Screen.MyPlayerEqualizer.route, Screen.MyPlayerAppearance.route, Screen.RemoteNotifications.route, "playlist_detail/{playlistId}")
-    val showNav = currentRoute != null && !hideNavRoutes.any { currentRoute.startsWith(it.split("{")[0]) }
-
     // Onboarding runs as a full-window gate before any nav surface is shown.
     if (!myplayerState.onboardingDone) {
         MyPlayerOnboardingFlow(
@@ -162,83 +159,94 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
     }
 
     Row(modifier = Modifier.fillMaxSize()) {
-        if (showNav) {
-            FloatingNavBar(
-                currentRoute = currentRoute,
-                onNavigate = { route ->
-                    if (route == currentRoute) return@FloatingNavBar
-                    if (route == Screen.Home.route) {
-                        val popped = navController.popBackStack(Screen.Home.route, inclusive = false)
-                        if (!popped) {
-                            navController.navigate(Screen.Home.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    inclusive = false
-                                }
-                                launchSingleTop = true
-                            }
-                        }
-                    } else {
-                        navController.navigate(route) {
+        FloatingNavBar(
+            currentRoute = currentRoute,
+            onNavigate = { route ->
+                if (route == currentRoute) return@FloatingNavBar
+                if (route == Screen.Home.route) {
+                    val popped = navController.popBackStack(Screen.Home.route, inclusive = false)
+                    if (!popped) {
+                        navController.navigate(Screen.Home.route) {
                             popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
+                                inclusive = false
                             }
                             launchSingleTop = true
-                            restoreState = true
                         }
                     }
+                } else {
+                    navController.navigate(route) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
                 }
-            )
-        }
+            }
+        )
+
+        // Content draws behind the transparent MiniPlayer (just like Android); screens get barHeight as list bottomPadding.
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        var barHeight by remember { mutableStateOf(0.dp) }
 
         Scaffold(
             modifier = Modifier.weight(1f).fillMaxHeight(),
             containerColor = CloudBlueBackground,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
-                AnimatedVisibility(
-                    visible = hasAnySong && !isOnNowPlaying,
-                    enter = slideInVertically(
-                        initialOffsetY = { it },
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioLowBouncy,
-                            stiffness = Spring.StiffnessMediumLow
-                        )
-                    ) + scaleIn(initialScale = 0.88f) + fadeIn(),
-                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onGloballyPositioned { barHeight = with(density) { it.size.height.toDp() } }
+                        .background(androidx.compose.ui.graphics.Color.Transparent),
+                    contentAlignment = Alignment.BottomCenter
                 ) {
-                    val miniSong = currentSong?.let {
-                        if (it.albumArt.isNullOrBlank() && !displayArt.isNullOrBlank()) {
-                            it.copy(albumArt = displayArt)
-                        } else {
-                            it
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = hasAnySong && !isOnNowPlaying,
+                        enter = slideInVertically(
+                            initialOffsetY = { it },
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioLowBouncy,
+                                stiffness = Spring.StiffnessMediumLow
+                            )
+                        ) + scaleIn(initialScale = 0.88f) + fadeIn(),
+                        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+                    ) {
+                        val miniSong = currentSong?.let {
+                            if (it.albumArt.isNullOrBlank() && !displayArt.isNullOrBlank()) {
+                                it.copy(albumArt = displayArt)
+                            } else {
+                                it
+                            }
+                        } ?: remember(currentOnlineSong, displayArt) {
+                            com.example.myplayer.data.local.entity.SongEntity(
+                                id = currentOnlineSong?.videoId ?: "",
+                                title = displayTitle ?: "",
+                                artist = displayArtist ?: "",
+                                album = "",
+                                duration = 0,
+                                path = displayArt ?: "",
+                                albumArt = displayArt,
+                                dateAdded = 0
+                            )
                         }
-                    } ?: remember(currentOnlineSong, displayArt) {
-                        com.example.myplayer.data.local.entity.SongEntity(
-                            id = currentOnlineSong?.videoId ?: "",
-                            title = displayTitle ?: "",
-                            artist = displayArtist ?: "",
-                            album = "",
-                            duration = 0,
-                            path = displayArt ?: "",
-                            albumArt = displayArt,
-                            dateAdded = 0
+                        MiniPlayer(
+                            song = miniSong,
+                            isPlaying = isPlaying,
+                            onPlayPauseClick = remember(viewModel) { { viewModel.playPause() } },
+                            onNextClick = remember(viewModel) { { viewModel.skipToNext() } },
+                            onPreviousClick = remember(viewModel) { { viewModel.skipToPrevious() } },
+                            onPlayerClick = remember(navController) {
+                                {
+                                    navController.navigate(Screen.NowPlaying.route) { launchSingleTop = true }
+                                }
+                            }
                         )
                     }
-                    MiniPlayer(
-                        song = miniSong,
-                        isPlaying = isPlaying,
-                        onPlayPauseClick = remember(viewModel) { { viewModel.playPause() } },
-                        onNextClick = remember(viewModel) { { viewModel.skipToNext() } },
-                        onPreviousClick = remember(viewModel) { { viewModel.skipToPrevious() } },
-                        onPlayerClick = remember(navController) {
-                            {
-                                navController.navigate(Screen.NowPlaying.route) { launchSingleTop = true }
-                            }
-                        }
-                    )
                 }
             }
-        ) { innerPadding ->
+        ) { _ ->
+        val effectiveBottomPadding = barHeight.coerceAtLeast(16.dp)
         NavHost(
             navController = navController,
             startDestination = Screen.Home.route,
@@ -277,7 +285,6 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
             },
             modifier = Modifier
                 .fillMaxSize()
-                .padding(bottom = if (showNav) innerPadding.calculateBottomPadding() else 0.dp)
         ) {
             composable(Screen.Home.route) {
                 HomeScreen(
@@ -287,7 +294,7 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
                     onNavigateToSettings = {
                         navController.navigate(Screen.Settings.route) { launchSingleTop = true }
                     },
-                    bottomPadding = 16.dp
+                    bottomPadding = effectiveBottomPadding
                 )
             }
             composable(Screen.Search.route) {
@@ -295,7 +302,7 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
                     onNavigateToNowPlaying = {
                         navController.navigate(Screen.NowPlaying.route) { launchSingleTop = true }
                     },
-                    bottomPadding = 16.dp
+                    bottomPadding = effectiveBottomPadding
                 )
             }
             composable(Screen.Trending.route) {
@@ -303,7 +310,7 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
                     onNavigateToNowPlaying = {
                         navController.navigate(Screen.NowPlaying.route) { launchSingleTop = true }
                     },
-                    bottomPadding = 16.dp,
+                    bottomPadding = effectiveBottomPadding,
                     viewModel = homeViewModel
                 )
             }
@@ -312,7 +319,7 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
                     onNavigateToNowPlaying = {
                         navController.navigate(Screen.NowPlaying.route) { launchSingleTop = true }
                     },
-                    bottomPadding = 16.dp
+                    bottomPadding = effectiveBottomPadding
                 )
             }
             composable(Screen.Library.route) {
@@ -331,7 +338,7 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
                     onOpenCustomizeStyles = { showStylePicker = true },
                     onOpenAudioLab = { navController.navigate(Screen.MyPlayerAudioLab.route) { launchSingleTop = true } },
                     onOpenAppearance = { navController.navigate(Screen.MyPlayerAppearance.route) { launchSingleTop = true } },
-                    bottomPadding = 16.dp
+                    bottomPadding = effectiveBottomPadding
                 )
             }
             composable("playlist_detail/{playlistId}") { backStackEntry ->

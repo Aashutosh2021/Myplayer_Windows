@@ -3,10 +3,8 @@ package com.example.myplayer.playback
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
@@ -16,6 +14,7 @@ import java.io.File
 import java.io.IOException
 import java.io.InputStreamReader
 import java.io.OutputStream
+import java.io.RandomAccessFile
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -27,21 +26,20 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.min
 
 /**
- * Windows Desktop Spotify-Style 9-Second Chunk Streaming & Disk Cache Proxy.
+ * Windows Desktop Spotify-Style 9-Second Chunk Streaming & Local File Loopback Server.
  *
- * Why this is critical on Windows:
- * Passing a raw `https://...googlevideo.com/...` URL directly to VLC (`libvlc`) opens a single
- * unbounded HTTP connection. On slow/congested internet, YouTube CDN throttles unbounded streams
- * and any socket hiccup after 8-9 seconds causes VLC to treat the stream as EOF (stopping the song).
+ * 1. Online Streams (`/stream?id=...&url=...`):
+ *    Fetches audio from the upstream CDN in **160 KB (~9-second) HTTP Range chunks** (`Range: bytes=start-end`)
+ *    with 4x exponential-backoff retries, disk caching (`~/.myplayer/cache/audio_chunks/<songKey>/chunk_<idx>.bin`),
+ *    and a rolling 3-chunk prefetch window (~27s).
  *
- * How [DesktopChunkStreamProxy] fixes this:
- * 1. Runs a fast local loopback server (`http://127.0.0.1:<port>/stream?...`).
- * 2. Fetches audio from the upstream CDN in **160 KB (~9-second) HTTP Range chunks** (`Range: bytes=start-end`).
- * 3. Retries any failed/timed-out 9-second chunk up to **4 times with exponential backoff** (350ms, 700ms, 1400ms, 2500ms)
- *    so a slow network glitch NEVER causes premature EOF!
- * 4. Persists every downloaded 9-second chunk to `~/.myplayer/cache/audio_chunks/<songKey>/chunk_<idx>.bin`
- *    so replaying or seeking is 100% instant and works even if internet drops mid-song.
- * 5. Prefetches a **rolling 3-chunk window (9s -> 18s -> 27s)** in the background while the current chunk plays.
+ * 2. Downloaded / Local Files (`/local?id=...`):
+ *    Serves local `.m4a` / `.mp3` / `.webm` files over `http://127.0.0.1:<port>/local?id=<id>` directly from
+ *    disk via [RandomAccessFile] with full HTTP `206 Partial Content` byte-range support!
+ *    Why this fixes Downloaded Music on Windows 100%:
+ *    - Works **100% offline** (uses internal `127.0.0.1` loopback, zero internet required).
+ *    - Completely bypasses libVLC's Windows native file-path bugs (`file:/C:/...`, `%20` URL-encoded spaces,
+ *      special Unicode/Hindi/Emoji characters in song titles, and JNA Windows ANSI `Cp1252` path encoding issues).
  */
 object DesktopChunkStreamProxy {
     private const val TAG = "DesktopChunkStreamProxy"
@@ -69,7 +67,8 @@ object DesktopChunkStreamProxy {
     private val urlToSongKey = ConcurrentHashMap<String, String>()
     private val totalLengthCache = ConcurrentHashMap<String, Long>()
     private val contentTypeCache = ConcurrentHashMap<String, String>()
-    private val inFlightChunks = ConcurrentHashMap<String, Deferred<ByteArray?>>()
+    private val inFlightChunks = ConcurrentHashMap<String, Any>()
+    private val localFileRegistry = ConcurrentHashMap<String, File>()
 
     @Volatile
     private var serverSocket: ServerSocket? = null
@@ -94,7 +93,7 @@ object DesktopChunkStreamProxy {
                     }
                 }
             }
-            Log.i(TAG, "9-Second Chunk Stream Proxy listening on 127.0.0.1:$boundPort")
+            Log.i(TAG, "9-Second Chunk & Local Audio Proxy listening on 127.0.0.1:$boundPort")
             boundPort
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start local chunk stream proxy: ${e.message}")
@@ -107,6 +106,32 @@ object DesktopChunkStreamProxy {
         if (cleanKey.isNotBlank() && streamUrl.startsWith("http")) {
             urlToSongKey[streamUrl] = cleanKey
         }
+    }
+
+    /**
+     * Wraps a local downloaded audio [File] on Windows into a pure-ASCII localhost HTTP URL
+     * (`http://127.0.0.1:<port>/local?id=<id>`) so libVLC streams it directly from disk
+     * with full HTTP Range seeking and zero Windows path / `%20` / Unicode encoding errors.
+     */
+    fun wrapLocalFile(file: File): String {
+        val port = ensureServerStarted()
+        if (port <= 0) return file.absolutePath
+        val fileId = "local_${file.absolutePath.hashCode().toUInt().toString(16)}"
+        localFileRegistry[fileId] = file
+        return "http://127.0.0.1:$port/local?id=$fileId"
+    }
+
+    /**
+     * If [url] is a localhost proxy URL wrapping an upstream URL, extracts the original upstream URL.
+     */
+    fun unwrapUpstreamUrlIfProxy(url: String?): String? {
+        if (url.isNullOrBlank()) return url
+        if (!url.startsWith("http://127.0.0.1:") && !url.startsWith("http://localhost:")) {
+            return url
+        }
+        val query = url.substringAfter("?", "")
+        val params = parseQueryParams(query)
+        return params["url"] ?: url
     }
 
     /**
@@ -155,6 +180,14 @@ object DesktopChunkStreamProxy {
 
             val query = pathAndQuery.substringAfter("?", "")
             val params = parseQueryParams(query)
+
+            // Route 1: Local / Downloaded File Streaming (`/local?id=...`)
+            if (pathAndQuery.startsWith("/local")) {
+                handleLocalFileRequest(client, method, params, rangeHeader)
+                return
+            }
+
+            // Route 2: Online 9-Second Chunk Streaming (`/stream?id=...&url=...`)
             val upstreamUrl = params["url"] ?: return
             val songKey = sanitizeKey(params["id"] ?: extractVideoIdOrHash(upstreamUrl))
 
@@ -260,6 +293,103 @@ object DesktopChunkStreamProxy {
     }
 
     /**
+     * Streams a local downloaded audio file from disk with full HTTP Range (`206 Partial Content`)
+     * support so libVLC plays downloaded songs reliably on Windows regardless of spaces, backslashes,
+     * or Unicode characters in the file path.
+     */
+    private fun handleLocalFileRequest(
+        client: Socket,
+        method: String,
+        params: Map<String, String>,
+        rangeHeader: String?
+    ) {
+        val out = client.getOutputStream()
+        val fileId = params["id"]
+        val localFile = if (fileId != null) localFileRegistry[fileId] else null
+
+        if (localFile == null || !localFile.exists() || !localFile.isFile || localFile.length() <= 0L) {
+            writeErrorResponse(out, 404, "Not Found")
+            return
+        }
+
+        val totalLength = localFile.length()
+        val ext = localFile.extension.lowercase()
+        val contentType = when (ext) {
+            "m4a", "mp4", "aac" -> "audio/mp4"
+            "mp3" -> "audio/mpeg"
+            "webm" -> "audio/webm"
+            "ogg", "opus" -> "audio/ogg"
+            "wav" -> "audio/wav"
+            "flac" -> "audio/flac"
+            else -> "audio/mp4"
+        }
+
+        var startOffset = 0L
+        var endOffset = totalLength - 1L
+        val isPartial = !rangeHeader.isNullOrBlank() && rangeHeader.startsWith("bytes=")
+
+        if (isPartial && rangeHeader != null) {
+            val rangeSpec = rangeHeader.removePrefix("bytes=").trim()
+            val dashIdx = rangeSpec.indexOf('-')
+            if (dashIdx >= 0) {
+                startOffset = rangeSpec.substring(0, dashIdx).trim().toLongOrNull() ?: 0L
+                val endStr = rangeSpec.substring(dashIdx + 1).trim()
+                if (endStr.isNotEmpty()) {
+                    endOffset = endStr.toLongOrNull() ?: endOffset
+                }
+            }
+        }
+
+        startOffset = startOffset.coerceIn(0L, (totalLength - 1L).coerceAtLeast(0L))
+        endOffset = endOffset.coerceIn(startOffset, totalLength - 1L)
+        val contentLength = (endOffset - startOffset + 1L).coerceAtLeast(0L)
+
+        val headers = if (isPartial) {
+            buildString {
+                append("HTTP/1.1 206 Partial Content\r\n")
+                append("Content-Type: $contentType\r\n")
+                append("Accept-Ranges: bytes\r\n")
+                append("Content-Range: bytes $startOffset-$endOffset/$totalLength\r\n")
+                append("Content-Length: $contentLength\r\n")
+                append("Connection: close\r\n\r\n")
+            }
+        } else {
+            buildString {
+                append("HTTP/1.1 200 OK\r\n")
+                append("Content-Type: $contentType\r\n")
+                append("Accept-Ranges: bytes\r\n")
+                append("Content-Length: $totalLength\r\n")
+                append("Connection: close\r\n\r\n")
+            }
+        }
+
+        out.write(headers.toByteArray(Charsets.UTF_8))
+        out.flush()
+
+        if (method == "HEAD") return
+
+        RandomAccessFile(localFile, "r").use { raf ->
+            raf.seek(startOffset)
+            val buffer = ByteArray(64 * 1024)
+            var remaining = contentLength
+            while (remaining > 0L) {
+                val toRead = min(buffer.size.toLong(), remaining).toInt()
+                val read = raf.read(buffer, 0, toRead)
+                if (read <= 0) break
+                try {
+                    out.write(buffer, 0, read)
+                } catch (_: IOException) {
+                    break
+                }
+                remaining -= read
+            }
+            try {
+                out.flush()
+            } catch (_: IOException) {}
+        }
+    }
+
+    /**
      * Returns the 160 KB (~9-second) chunk at [chunkIndex], loading from disk cache if available
      * or downloading from the upstream CDN with 4x exponential backoff retries.
      */
@@ -279,108 +409,84 @@ object DesktopChunkStreamProxy {
         if (knownTotal > 0L && startByte >= knownTotal) return ByteArray(0)
 
         val lockKey = "$songKey:$chunkIndex"
-        val deferred = inFlightChunks.computeIfAbsent(lockKey) {
-            proxyScope.async {
-                fetchChunkInternal(songKey, upstreamUrl, songDir, chunkIndex, chunkFile, knownTotal, startByte)
-            }
-        }
+        val lock = inFlightChunks.computeIfAbsent(lockKey) { Any() }
 
         return try {
-            deferred.await()
-        } finally {
-            inFlightChunks.remove(lockKey, deferred)
-        }
-    }
+            // Re-check disk cache if another coroutine just finished downloading this chunk
+            if (chunkFile.exists() && chunkFile.length() > 0L) {
+                return chunkFile.readBytes()
+            }
 
-    private suspend fun fetchChunkInternal(
-        songKey: String,
-        upstreamUrl: String,
-        songDir: File,
-        chunkIndex: Long,
-        chunkFile: File,
-        initialKnownTotal: Long,
-        startByte: Long
-    ): ByteArray? {
-        // Re-check disk cache before network call
-        if (chunkFile.exists() && chunkFile.length() > 0L) {
-            return runCatching { chunkFile.readBytes() }.getOrNull()
-        }
+            val endByte = if (knownTotal > 0L) {
+                min(startByte + CHUNK_SIZE_BYTES - 1L, knownTotal - 1L)
+            } else {
+                startByte + CHUNK_SIZE_BYTES - 1L
+            }
 
-        var knownTotal = initialKnownTotal
-        val endByte = if (knownTotal > 0L) {
-            min(startByte + CHUNK_SIZE_BYTES - 1L, knownTotal - 1L)
-        } else {
-            startByte + CHUNK_SIZE_BYTES - 1L
-        }
+            var attempt = 0
+            val backoffDelays = longArrayOf(350L, 700L, 1400L, 2500L)
+            while (attempt < MAX_CHUNK_RETRIES) {
+                try {
+                    val req = Request.Builder()
+                        .url(upstreamUrl)
+                        .addHeader("User-Agent", USER_AGENT)
+                        .addHeader("Range", "bytes=$startByte-$endByte")
+                        .build()
 
-        var attempt = 0
-        val backoffDelays = longArrayOf(350L, 700L, 1400L, 2500L)
-        while (attempt < MAX_CHUNK_RETRIES) {
-            try {
-                val req = Request.Builder()
-                    .url(upstreamUrl)
-                    .addHeader("User-Agent", USER_AGENT)
-                    .addHeader("Range", "bytes=$startByte-$endByte")
-                    .build()
-
-                httpClient.newCall(req).execute().use { response ->
-                    if (response.code == 416) {
-                        return ByteArray(0)
-                    }
-                    if (!response.isSuccessful && response.code != 206) {
-                        throw IOException("HTTP ${response.code}")
-                    }
-
-                    val cType = response.header("Content-Type")
-                    if (!cType.isNullOrBlank()) {
-                        contentTypeCache[songKey] = cType
-                    }
-
-                    val contentRange = response.header("Content-Range")
-                    if (!contentRange.isNullOrBlank()) {
-                        val totalStr = contentRange.substringAfterLast("/").trim()
-                        val parsedTotal = totalStr.toLongOrNull()
-                        if (parsedTotal != null && parsedTotal > 0L) {
-                            totalLengthCache[songKey] = parsedTotal
-                            knownTotal = parsedTotal
-                            saveCachedMeta(songKey, songDir)
+                    httpClient.newCall(req).execute().use { response ->
+                        if (response.code == 416) {
+                            return ByteArray(0)
                         }
-                    } else if (chunkIndex == 0L && response.code == 200) {
-                        val fullLen = response.body?.contentLength() ?: -1L
-                        if (fullLen > 0L) {
-                            totalLengthCache[songKey] = fullLen
-                            knownTotal = fullLen
-                            saveCachedMeta(songKey, songDir)
+                        if (!response.isSuccessful && response.code != 206) {
+                            throw IOException("HTTP ${response.code}")
                         }
-                    }
 
-                    val bytes = response.body?.bytes() ?: throw IOException("Empty chunk body")
-                    if (bytes.isNotEmpty()) {
-                        val tmp = File(songDir, "chunk_${chunkIndex}_${System.currentTimeMillis()}.tmp")
-                        try {
-                            tmp.writeBytes(bytes)
-                            if (!tmp.renameTo(chunkFile)) {
-                                if (!chunkFile.exists()) {
+                        val cType = response.header("Content-Type")
+                        if (!cType.isNullOrBlank()) {
+                            contentTypeCache[songKey] = cType
+                        }
+
+                        val contentRange = response.header("Content-Range")
+                        if (!contentRange.isNullOrBlank()) {
+                            val totalStr = contentRange.substringAfterLast("/").trim()
+                            val parsedTotal = totalStr.toLongOrNull()
+                            if (parsedTotal != null && parsedTotal > 0L) {
+                                totalLengthCache[songKey] = parsedTotal
+                                saveCachedMeta(songKey, songDir)
+                            }
+                        } else if (chunkIndex == 0L && response.code == 200) {
+                            val fullLen = response.body?.contentLength() ?: -1L
+                            if (fullLen > 0L) {
+                                totalLengthCache[songKey] = fullLen
+                                saveCachedMeta(songKey, songDir)
+                            }
+                        }
+
+                        val bytes = response.body?.bytes() ?: throw IOException("Empty chunk body")
+                        if (bytes.isNotEmpty()) {
+                            synchronized(lock) {
+                                val tmp = File(songDir, "chunk_${chunkIndex}.tmp")
+                                tmp.writeBytes(bytes)
+                                if (!tmp.renameTo(chunkFile)) {
                                     tmp.copyTo(chunkFile, overwrite = true)
+                                    tmp.delete()
                                 }
                             }
-                        } catch (_: Exception) {
-                            // File write/delete failed on Windows; data is still valid in memory
-                        } finally {
-                            try { tmp.delete() } catch (_: Exception) {}
                         }
+                        return bytes
                     }
-                    return bytes
-                }
-            } catch (e: Exception) {
-                attempt++
-                Log.w(TAG, "Chunk $chunkIndex for $songKey failed (attempt $attempt/$MAX_CHUNK_RETRIES): ${e.message}")
-                if (attempt < MAX_CHUNK_RETRIES) {
-                    delay(backoffDelays[(attempt - 1).coerceAtMost(backoffDelays.lastIndex)])
+                } catch (e: Exception) {
+                    attempt++
+                    Log.w(TAG, "Chunk $chunkIndex for $songKey failed (attempt $attempt/$MAX_CHUNK_RETRIES): ${e.message}")
+                    if (attempt < MAX_CHUNK_RETRIES) {
+                        delay(backoffDelays[(attempt - 1).coerceAtMost(backoffDelays.lastIndex)])
+                    }
                 }
             }
+            null
+        } finally {
+            inFlightChunks.remove(lockKey)
         }
-        return null
     }
 
     private fun loadCachedMeta(songKey: String, songDir: File) {

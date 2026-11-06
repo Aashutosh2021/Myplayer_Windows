@@ -24,13 +24,18 @@ object AppContainer {
     private val singletons = mutableMapOf<Class<*>, Any>()
     private val scope = CoroutineScope(Dispatchers.IO)
 
+    // Composed DSP inputs from the two audio settings sources (store wins over legacy),
+    // shared so both collectors apply the full picture independently.
+    @Volatile private var masterAudioState = com.example.myplayer.data.preferences.AudioPlaybackState()
+    @Volatile private var masterLegacyPreampDb: Float = 0f
+
+    private fun applyMasterDsp() {
+        val preampDb = if (masterAudioState.loudnessMode != com.example.myplayer.data.preferences.LoudnessMode.OFF) 0f else masterLegacyPreampDb
+        com.example.myplayer.playback.DesktopAudioBackend.setDspParams(masterAudioState.eqEnabled, masterAudioState.eqBandGains, preampDb)
+    }
+
     fun initialize() {
         println("[AppContainer] Initializing desktop dependencies...")
-        try {
-            DesktopAudioBackend.init()
-        } catch (e: Throwable) {
-            println("[AppContainer] Warning initializing audio: ${e.message}")
-        }
 
         val appContext = Context()
         register(Context::class.java, appContext)
@@ -98,7 +103,10 @@ object AppContainer {
         val losslessResolver = LosslessStreamResolver(okHttpClient)
         register(LosslessStreamResolver::class.java, losslessResolver)
 
-        val playbackSourceResolver = PlaybackSourceResolver(appContext, db.downloadedSongDao(), db.songDao(), innertubeApi, losslessResolver)
+        val audioSettingsRepository = com.example.myplayer.data.preferences.AudioSettingsRepository(appContext)
+        register(com.example.myplayer.data.preferences.AudioSettingsRepository::class.java, audioSettingsRepository)
+
+        val playbackSourceResolver = PlaybackSourceResolver(appContext, db.downloadedSongDao(), db.songDao(), innertubeApi, losslessResolver, audioSettingsRepository)
         register(PlaybackSourceResolver::class.java, playbackSourceResolver)
 
         val mediaItemFactory = MediaItemFactory()
@@ -245,6 +253,62 @@ object AppContainer {
         )
         register(com.example.myplayer.sync.SyncPlayManager::class.java, syncPlayManager)
 
+        // ===== Master audio, Spotify & Listen-Together wiring (ported from Android) =====
+        // Desktop never constructs MusicService (the shim Context's startService is a no-op),
+        // so Android MusicService.initAudioFeatureManagers()' wiring lives here instead.
+        val audioPlaybackStore = com.example.myplayer.data.preferences.AudioPlaybackStore(appContext)
+        register(com.example.myplayer.data.preferences.AudioPlaybackStore::class.java, audioPlaybackStore)
+
+        register(com.example.myplayer.playback.dsp.MasterAudioDspProcessor::class.java, com.example.myplayer.playback.dsp.MasterAudioDspProcessor())
+        register(com.example.myplayer.playback.dsp.LastWaveDspAudioProcessor::class.java, com.example.myplayer.playback.dsp.LastWaveDspAudioProcessor())
+
+        val audioFeatureManagers = com.example.myplayer.playback.AudioFeatureManagers(okHttpClient)
+        register(com.example.myplayer.playback.AudioFeatureManagers::class.java, audioFeatureManagers)
+
+        val centralDsp = resolveDependency(com.example.myplayer.playback.dsp.MasterAudioDspProcessor::class.java) as com.example.myplayer.playback.dsp.MasterAudioDspProcessor
+        val centralLastWave = resolveDependency(com.example.myplayer.playback.dsp.LastWaveDspAudioProcessor::class.java) as com.example.myplayer.playback.dsp.LastWaveDspAudioProcessor
+
+        // Crossfade engine — attached to the shared MediaController shim, which drives
+        // DesktopAudioBackend (the audible VLC output).
+        try {
+            audioFeatureManagers.attachCrossfadeMonitor(
+                scope = scope,
+                player = androidx.media3.session.MediaController.getShared(),
+                isEnabled = { masterAudioState.crossfadeEnabled },
+                crossfadeDurationSec = masterAudioState.crossfadeSeconds
+            )
+        } catch (e: Throwable) {
+            println("[AppContainer] Crossfade monitor unavailable: ${e.message}")
+        }
+
+        // 15-band EQ + store loudness -> VLC DSP bridge; legacy loudness boost feeds preamp.
+        scope.launch {
+            audioPlaybackStore.stateFlow.collect { state ->
+                masterAudioState = state
+                centralDsp.updateState(state)
+                applyMasterDsp()
+            }
+        }
+        scope.launch {
+            audioSettingsRepository.configFlow.collect { config ->
+                masterLegacyPreampDb = if (config.loudnessNormalize) {
+                    (config.loudnessGainMb / 100f).coerceIn(-20f, 20f)
+                } else 0f
+                centralLastWave.updateDspConfig(
+                    preset = config.clarityPreset,
+                    dolby = config.trueDolbySpatial,
+                    width = config.spatialWidth
+                )
+                applyMasterDsp()
+            }
+        }
+
+        val spotifyIntegrationManager = com.example.myplayer.data.spotify.SpotifyIntegrationManager(appContext, aiModel, db.songDao(), db.playlistDao(), db.favoriteDao())
+        register(com.example.myplayer.data.spotify.SpotifyIntegrationManager::class.java, spotifyIntegrationManager)
+
+        val meldListenTogetherManager = com.example.myplayer.sync.MeldListenTogetherManager(musicController, syncTrackMatcher, innertubeApi, okHttpClient)
+        register(com.example.myplayer.sync.MeldListenTogetherManager::class.java, meldListenTogetherManager)
+
         val preferencesManager = com.example.myplayer.data.local.prefs.PreferencesManager(appContext)
         register(com.example.myplayer.data.local.prefs.PreferencesManager::class.java, preferencesManager)
 
@@ -269,6 +333,15 @@ object AppContainer {
 
         val hybridLibraryRepository = com.example.myplayer.data.repository.HybridLibraryRepository(db.downloadedSongDao(), db.songDao())
         register(com.example.myplayer.data.repository.HybridLibraryRepository::class.java, hybridLibraryRepository)
+
+        // Last: the audio backend wires VLC's callback output to the DSP chain, which resolves
+        // AudioFxService / MasterAudioDspProcessor — all DSP singletons must be registered first
+        // so the chain sees the same instances the settings collectors feed.
+        try {
+            com.example.myplayer.playback.DesktopAudioBackend.init()
+        } catch (e: Throwable) {
+            println("[AppContainer] Warning initializing audio: ${e.message}")
+        }
 
         println("[AppContainer] Desktop dependencies initialized.")
     }

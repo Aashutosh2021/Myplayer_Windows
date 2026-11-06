@@ -13,9 +13,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -33,6 +35,8 @@ import androidx.compose.ui.res.painterResource
 import com.example.myplayer.R
 import com.example.myplayer.data.update.UpdateChecker
 import com.example.myplayer.ui.components.ClayIconButton
+import com.example.myplayer.ui.components.WhatsNewDialog
+import com.example.myplayer.ui.myplayer.*
 import com.example.myplayer.ui.theme.*
 
 @Composable
@@ -40,6 +44,12 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onNavigateToDualBud: () -> Unit = {},
     onNavigateToSyncPlay: () -> Unit = {},
+    onNavigateToAudioPlayback: (() -> Unit)? = null,
+    myplayerState: MyPlayerUiStateHolder? = null,
+    onNavigateToPlayerStyles: () -> Unit = {},
+    onNavigateToMyPlayerAppearance: () -> Unit = {},
+    onNavigateToMyPlayerAudioLab: () -> Unit = {},
+    onNavigateToRemoteNotifications: () -> Unit = {},
     bottomPadding: androidx.compose.ui.unit.Dp = 120.dp,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
@@ -55,8 +65,209 @@ fun SettingsScreen(
     var showDialogText by remember { mutableStateOf<String?>(null) }
     var isLoadingDialog by remember { mutableStateOf(false) }
 
+    val isSpotifyLoggedIn by viewModel.isSpotifyLoggedIn.collectAsStateWithLifecycle()
+    val spotifyUsername by viewModel.spotifyUsername.collectAsStateWithLifecycle()
+    val isSpotifySyncing by viewModel.isSpotifySyncing.collectAsStateWithLifecycle()
+    val spotifySyncMessage by viewModel.spotifySyncMessage.collectAsStateWithLifecycle()
+    var showSpotifyLoginDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(spotifySyncMessage) {
+        spotifySyncMessage?.let {
+            showDialogText = it
+            viewModel.clearSpotifySyncMessage()
+        }
+    }
+
     var showNameDialog by remember { mutableStateOf(false) }
     var editNameInput by remember { mutableStateOf("") }
+    var showWhatsNewDialog by remember { mutableStateOf(false) }
+    var showUserManualDialog by remember { mutableStateOf(false) }
+    var showDonateDialog by remember { mutableStateOf(false) }
+
+    val audioConfig by viewModel.audioConfig.collectAsStateWithLifecycle()
+    var showAudioPlaybackScreen by remember { mutableStateOf(false) }
+
+    if (showAudioPlaybackScreen) {
+        com.example.myplayer.ui.settings.AudioAndPlaybackScreen(
+            store = viewModel.audioPlaybackStore,
+            featureManagers = viewModel.audioFeatureManagers,
+            onBack = { showAudioPlaybackScreen = false }
+        )
+        return
+    }
+
+    if (showWhatsNewDialog) {
+        WhatsNewDialog(onDismiss = { showWhatsNewDialog = false })
+    }
+
+    if (showUserManualDialog) {
+        UserManualDialog(
+            onDismiss = { showUserManualDialog = false },
+            onNavigateToPlayerStyles = onNavigateToPlayerStyles,
+            onNavigateToAudioPlayback = {
+                if (onNavigateToAudioPlayback != null) {
+                    onNavigateToAudioPlayback()
+                } else {
+                    showAudioPlaybackScreen = true
+                }
+            },
+            onNavigateToAudioLab = onNavigateToMyPlayerAudioLab,
+            onNavigateToDualBud = onNavigateToDualBud,
+            onNavigateToSyncPlay = onNavigateToSyncPlay,
+            onConnectSpotify = { showSpotifyLoginDialog = true }
+        )
+    }
+
+    if (showDonateDialog) {
+        // Desktop adaptation: UPI intents are Android-only; the UPI ID copy flow covers
+        // all desktop payment paths (paste into any UPI/GPay app on your phone).
+        val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+        AlertDialog(
+            onDismissRequest = { showDonateDialog = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            shape = RoundedCornerShape(24.dp),
+            icon = {
+                Icon(
+                    Icons.Filled.LocalCafe,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    "Buy Me a Coffee",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "MyPlayer is 100% free and open with zero ads. If you enjoy using the app, consider supporting its development with a small contribution!",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "UPI ID (GPay / PhonePe / Paytm)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    DEVELOPER_UPI_ID,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            IconButton(onClick = {
+                                clipboard.setText(androidx.compose.ui.text.AnnotatedString(DEVELOPER_UPI_ID))
+                                Toast.makeText(context, "UPI ID copied: $DEVELOPER_UPI_ID", Toast.LENGTH_SHORT).show()
+                            }) {
+                                Icon(
+                                    Icons.Filled.ContentCopy,
+                                    contentDescription = "Copy UPI ID",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        clipboard.setText(androidx.compose.ui.text.AnnotatedString(DEVELOPER_UPI_ID))
+                        Toast.makeText(context, "UPI ID copied to clipboard!", Toast.LENGTH_LONG).show()
+                        showDonateDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Text("Copy UPI ID (Pay from any UPI app)")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDonateDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+
+    if (showSpotifyLoginDialog) {
+        SpotifyLoginDialog(
+            spotifyManager = viewModel.spotifyManager,
+            onDismiss = { showSpotifyLoginDialog = false },
+            onLoginSuccess = { user ->
+                showDialogText = "Connected to Spotify as $user! Taste profile synced into AI recommendations."
+            }
+        )
+    }
+
+    var showImportSpotifyDialog by remember { mutableStateOf(false) }
+    var importSpotifyUrlInput by remember { mutableStateOf("") }
+
+    if (showImportSpotifyDialog) {
+        AlertDialog(
+            onDismissRequest = { showImportSpotifyDialog = false; importSpotifyUrlInput = "" },
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.primary,
+            textContentColor = MaterialTheme.colorScheme.secondary,
+            title = { Text("Import Spotify Playlist", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Paste any public or shared Spotify playlist link or ID:")
+                    OutlinedTextField(
+                        value = importSpotifyUrlInput,
+                        onValueChange = { importSpotifyUrlInput = it },
+                        singleLine = true,
+                        placeholder = { Text("https://open.spotify.com/playlist/...") },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            cursorColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val input = importSpotifyUrlInput.trim()
+                        if (input.isNotBlank()) {
+                            viewModel.importSpotifyPlaylist(input)
+                            showImportSpotifyDialog = false
+                            importSpotifyUrlInput = ""
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) { Text("Import", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImportSpotifyDialog = false; importSpotifyUrlInput = "" }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     val backupLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
@@ -138,7 +349,9 @@ fun SettingsScreen(
                 Button(
                     onClick = {
                         if (editNameInput.isNotBlank()) {
-                            viewModel.setUserName(editNameInput.trim())
+                            val trimmed = editNameInput.trim()
+                            viewModel.setUserName(trimmed)
+                            myplayerState?.completeOnboarding(trimmed, myplayerState.pickedArtists)
                         }
                         showNameDialog = false
                     },
@@ -372,6 +585,32 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    Spacer(Modifier.weight(1f))
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surface)
+                            .clickable(onClick = onNavigateToRemoteNotifications),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Filled.Notifications,
+                            contentDescription = "Notifications",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        if (MyPlayerRemoteNotificationManager.unreadCount > 0 || MyPlayerRemoteNotificationManager.notificationHistory.isNotEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(top = 9.dp, end = 9.dp)
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(MyPlayerAccentGreen)
+                            )
+                        }
+                    }
                     Image(
                         painter = painterResource(R.drawable.inside_logo),
                         contentDescription = null,
@@ -416,8 +655,32 @@ fun SettingsScreen(
             )
         }
 
+        item {
+            SettingsNavigationRow(
+                icon = Icons.Filled.Palette,
+                title = "Customize Player Styles",
+                subtitle = "Active: ${myplayerState?.playerStyle?.title ?: "Radial (MyPlayer)"} • 6 unique styles",
+                onClick = onNavigateToPlayerStyles
+            )
+        }
+
         // Section: Playback
         item { SettingsSectionHeader(title = "Playback") }
+
+        item {
+            SettingsNavigationRow(
+                icon = Icons.Filled.GraphicEq,
+                title = "Audio & Playback Engine",
+                subtitle = "15-Band EQ, 7 Quality Tiers, Studio Clarity & Bit-Perfect",
+                onClick = {
+                    if (onNavigateToAudioPlayback != null) {
+                        onNavigateToAudioPlayback()
+                    } else {
+                        showAudioPlaybackScreen = true
+                    }
+                }
+            )
+        }
 
         item {
             SettingsToggleRow(
@@ -426,6 +689,62 @@ fun SettingsScreen(
                 subtitle = "Automatically play similar songs when the queue ends",
                 checked = isAutoplayEnabled,
                 onCheckedChange = { viewModel.setAutoplayEnabled(it) }
+            )
+        }
+
+        // Section: Help & User Manual
+        item { SettingsSectionHeader(title = "Help & User Manual") }
+
+        item {
+            SettingsNavigationRow(
+                icon = Icons.Filled.MenuBook,
+                title = "User Manual & Feature Guide",
+                subtitle = "Complete guide to gestures, audio engine, equalizer, styles & access paths",
+                onClick = { showUserManualDialog = true }
+            )
+        }
+
+        // Section: Spotify & AI Taste
+        item { SettingsSectionHeader(title = "Spotify & AI Taste") }
+
+        item {
+            if (!isSpotifyLoggedIn) {
+                SettingsNavigationRow(
+                    icon = Icons.Filled.MusicNote,
+                    title = "Connect Spotify",
+                    subtitle = "Import your Liked Songs & Top Tracks into MyPlayer",
+                    onClick = { showSpotifyLoginDialog = true }
+                )
+            } else {
+                SettingsNavigationRow(
+                    icon = Icons.Filled.CheckCircle,
+                    title = "Spotify Connected (${spotifyUsername ?: "User"})",
+                    subtitle = if (isSpotifySyncing) "Syncing playlists & library into MyPlayer..." else "Tap to sync all Spotify Playlists & Library",
+                    onClick = {
+                        if (!isSpotifySyncing) {
+                            viewModel.syncSpotify()
+                            showDialogText = "Syncing all Spotify Playlists and Library songs into MyPlayer..."
+                        }
+                    }
+                )
+                SettingsNavigationRow(
+                    icon = Icons.Filled.Delete,
+                    title = "Disconnect Spotify",
+                    subtitle = "Clear Spotify session cookies and tokens",
+                    onClick = {
+                        viewModel.logoutSpotify()
+                        showDialogText = "Disconnected from Spotify."
+                    }
+                )
+            }
+        }
+
+        item {
+            SettingsNavigationRow(
+                icon = Icons.AutoMirrored.Filled.QueueMusic,
+                title = "Import Spotify Playlist",
+                subtitle = "Import any public or shared Spotify playlist by link or ID",
+                onClick = { showImportSpotifyDialog = true }
             )
         }
 
@@ -469,6 +788,21 @@ fun SettingsScreen(
                 title = "Dual Bud Mode",
                 subtitle = "Play two independent songs simultaneously in left & right earbuds",
                 onClick = onNavigateToDualBud
+            )
+        }
+
+        // Section: Support Development
+        item { SettingsSectionHeader(title = "Support Development") }
+
+        item {
+            SettingsNavigationRow(
+                icon = Icons.Filled.LocalCafe,
+                title = "Buy Me a Coffee",
+                subtitle = "Support MyPlayer development via GPay, PhonePe, or UPI (0% fees)",
+                onClick = {
+                    MyPlayerRemoteNotificationManager.highlightDonateSection = false
+                    showDonateDialog = true
+                }
             )
         }
 
@@ -524,6 +858,15 @@ fun SettingsScreen(
                     }
                     context.startActivity(intent)
                 }
+            )
+        }
+
+        item {
+            SettingsNavigationRow(
+                icon = Icons.Filled.Info,
+                title = "What's New in v${com.example.myplayer.BuildConfig.VERSION_NAME}",
+                subtitle = "See new features and improvements in this release",
+                onClick = { showWhatsNewDialog = true }
             )
         }
 
@@ -672,6 +1015,7 @@ private fun SettingsInfoRow(
 }
 
 private const val DEVELOPER_EMAIL = "flexflycompany.in@gmail.com"
+private const val DEVELOPER_UPI_ID = "gaashutoshgupta52-2@okaxis"
 
 private fun sendEmail(
     context: Context,

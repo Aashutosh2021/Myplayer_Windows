@@ -27,6 +27,8 @@ class PackageManager {
     fun getPackagesForUid(uid: Int): Array<String>? = arrayOf("com.example.myplayer")
     fun checkPermission(permName: String, pkgName: String): Int = PERMISSION_GRANTED
     fun getApplicationInfo(packageName: String, flags: Int): ApplicationInfo = ApplicationInfo()
+    fun getLaunchIntentForPackage(packageName: String): android.content.Intent? = null
+    fun setComponentEnabledSetting(component: android.content.ComponentName, newState: Int, flags: Int) {}
 
     companion object {
         const val GET_SIGNING_CERTIFICATES = 0x08000000

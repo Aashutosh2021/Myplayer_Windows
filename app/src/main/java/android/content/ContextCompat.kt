@@ -6,17 +6,21 @@ import java.util.prefs.Preferences
 
 interface SharedPreferences {
     fun getString(key: String, defValue: String?): String?
+    fun getStringSet(key: String, defValues: Set<String>?): Set<String>?
     fun getInt(key: String, defValue: Int): Int
     fun getBoolean(key: String, defValue: Boolean): Boolean
     fun getLong(key: String, defValue: Long): Long
+    fun getFloat(key: String, defValue: Float): Float
     fun contains(key: String): Boolean
     fun edit(): Editor
 
     interface Editor {
         fun putString(key: String, value: String?): Editor
+        fun putStringSet(key: String, values: Set<String>?): Editor
         fun putInt(key: String, value: Int): Editor
         fun putBoolean(key: String, value: Boolean): Editor
         fun putLong(key: String, value: Long): Editor
+        fun putFloat(key: String, value: Float): Editor
         fun remove(key: String): Editor
         fun clear(): Editor
         fun apply()
@@ -54,9 +58,21 @@ class DesktopSharedPreferences(private val name: String) : SharedPreferences {
     }
 
     override fun getString(key: String, defValue: String?): String? = data[key] ?: defValue
+    override fun getStringSet(key: String, defValues: Set<String>?): Set<String>? {
+        val raw = data[key] ?: return defValues
+        return try {
+            val arr = org.json.JSONArray(raw)
+            val set = mutableSetOf<String>()
+            for (i in 0 until arr.length()) set.add(arr.getString(i))
+            set
+        } catch (_: Exception) {
+            raw.split(";;;").filter { it.isNotBlank() }.toSet().ifEmpty { defValues }
+        }
+    }
     override fun getInt(key: String, defValue: Int): Int = data[key]?.toIntOrNull() ?: defValue
     override fun getBoolean(key: String, defValue: Boolean): Boolean = data[key]?.toBooleanStrictOrNull() ?: defValue
     override fun getLong(key: String, defValue: Long): Long = data[key]?.toLongOrNull() ?: defValue
+    override fun getFloat(key: String, defValue: Float): Float = data[key]?.toFloatOrNull() ?: defValue
     override fun contains(key: String): Boolean = data.containsKey(key)
 
     override fun edit(): SharedPreferences.Editor = EditorImpl(this)
@@ -79,6 +95,18 @@ class DesktopSharedPreferences(private val name: String) : SharedPreferences {
             actions.add { if (value != null) parent.data[key] = value else parent.data.remove(key) }
             return this
         }
+        override fun putStringSet(key: String, values: Set<String>?): SharedPreferences.Editor {
+            actions.add {
+                if (values != null) {
+                    val arr = org.json.JSONArray()
+                    values.forEach { arr.put(it) }
+                    parent.data[key] = arr.toString()
+                } else {
+                    parent.data.remove(key)
+                }
+            }
+            return this
+        }
         override fun putInt(key: String, value: Int): SharedPreferences.Editor {
             actions.add { parent.data[key] = value.toString() }
             return this
@@ -88,6 +116,10 @@ class DesktopSharedPreferences(private val name: String) : SharedPreferences {
             return this
         }
         override fun putLong(key: String, value: Long): SharedPreferences.Editor {
+            actions.add { parent.data[key] = value.toString() }
+            return this
+        }
+        override fun putFloat(key: String, value: Float): SharedPreferences.Editor {
             actions.add { parent.data[key] = value.toString() }
             return this
         }
@@ -251,7 +283,9 @@ class Intent(var action: String? = null, var data: Uri? = null) {
     fun getBooleanExtra(name: String, default: Boolean): Boolean = (extras[name] as? Boolean) ?: default
     fun getLongExtra(name: String, default: Long): Long = (extras[name] as? Long) ?: default
 
-    fun addFlags(flags: Int): Intent = this
+    fun addFlags(flags: Int): Intent { this.flags = flags; return this }
+
+    var flags: Int = 0
 
     companion object {
         const val ACTION_VIEW = "android.intent.action.VIEW"
@@ -261,6 +295,7 @@ class Intent(var action: String? = null, var data: Uri? = null) {
         const val EXTRA_SUBJECT = "android.intent.extra.SUBJECT"
         const val EXTRA_TEXT = "android.intent.extra.TEXT"
         const val FLAG_ACTIVITY_NEW_TASK = 0x10000000
+        const val FLAG_ACTIVITY_CLEAR_TOP = 0x04000000
 
         @JvmStatic
         fun createChooser(target: Intent, title: CharSequence?): Intent = target

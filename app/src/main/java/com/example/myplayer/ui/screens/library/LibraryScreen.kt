@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.res.painterResource
 import com.example.myplayer.R
 import com.example.myplayer.ui.common.AlbumArtImage
+import com.example.myplayer.ui.myplayer.*
 import com.example.myplayer.ui.theme.*
 
 @Composable
@@ -42,18 +43,45 @@ fun LibraryScreen(
     onPlaylistClick: (Long) -> Unit,
     onPlaySong: (List<PlayableSong>, Int) -> Unit,
     onNavigateToSettings: () -> Unit = {},
+    myplayerState: MyPlayerUiStateHolder? = null,
+    onOpenCustomizeStyles: () -> Unit = {},
+    onOpenAudioLab: () -> Unit = {},
+    onOpenAppearance: () -> Unit = {},
     bottomPadding: Dp = 100.dp,
     viewModel: LibraryViewModel = hiltViewModel()
 ) {
     val playlists by viewModel.playlists.collectAsStateWithLifecycle()
     val downloadedSongs by viewModel.downloadedSongs.collectAsStateWithLifecycle()
     val favoriteSongs by viewModel.favoriteSongs.collectAsStateWithLifecycle()
+    val isImportingSpotify by viewModel.isImportingSpotify.collectAsStateWithLifecycle()
+    val importStatusMessage by viewModel.importStatusMessage.collectAsStateWithLifecycle()
 
     var selectedTab by remember { mutableIntStateOf(0) }
+    var sortAscending by remember { mutableStateOf(true) }
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
     var songToAddToPlaylist by remember { mutableStateOf<PlayableSong?>(null) }
     var songToRemoveDownload by remember { mutableStateOf<PlayableSong?>(null) }
+
+    // Playlist rename flow (grid-level "Rename" action): target playlist + name buffer
+    var playlistToRename by remember { mutableStateOf<PlaylistEntity?>(null) }
+    var renameInput by remember { mutableStateOf("") }
+
+    importStatusMessage?.let { msg ->
+        AlertDialog(
+            onDismissRequest = { viewModel.clearImportStatusMessage() },
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.primary,
+            textContentColor = MaterialTheme.colorScheme.onSurface,
+            title = { Text("Spotify Import", fontWeight = FontWeight.Bold) },
+            text = { Text(msg) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.clearImportStatusMessage() }) {
+                    Text("OK", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
 
     songToRemoveDownload?.let { song ->
         AlertDialog(
@@ -81,17 +109,17 @@ fun LibraryScreen(
         )
     }
 
-    if (showCreatePlaylistDialog) {
+    playlistToRename?.let { target ->
         AlertDialog(
-            onDismissRequest = { showCreatePlaylistDialog = false; newPlaylistName = "" },
+            onDismissRequest = { playlistToRename = null; renameInput = "" },
             containerColor = MaterialTheme.colorScheme.surface,
             titleContentColor = MaterialTheme.colorScheme.primary,
             textContentColor = MaterialTheme.colorScheme.secondary,
-            title = { Text("New Playlist", fontWeight = FontWeight.Bold) },
+            title = { Text("Rename Playlist", fontWeight = FontWeight.Bold) },
             text = {
                 OutlinedTextField(
-                    value = newPlaylistName,
-                    onValueChange = { newPlaylistName = it },
+                    value = renameInput,
+                    onValueChange = { renameInput = it },
                     label = { Text("Playlist name") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -107,13 +135,72 @@ fun LibraryScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        if (newPlaylistName.isNotBlank()) {
-                            viewModel.createPlaylist(newPlaylistName.trim())
+                        val newName = renameInput.trim()
+                        if (newName.isNotBlank()) {
+                            viewModel.renamePlaylist(target.id, newName)
+                            renameInput = ""
+                            playlistToRename = null
+                        }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)
+                ) { Text("Rename", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { playlistToRename = null; renameInput = "" },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.secondary)
+                ) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showCreatePlaylistDialog) {
+        val isSpotifyInput = newPlaylistName.contains("spotify.com") || newPlaylistName.contains("spotify:playlist") || (newPlaylistName.trim().length == 22 && !newPlaylistName.contains(" "))
+        AlertDialog(
+            onDismissRequest = { showCreatePlaylistDialog = false; newPlaylistName = "" },
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.primary,
+            textContentColor = MaterialTheme.colorScheme.secondary,
+            title = { Text(if (isSpotifyInput) "Import Spotify Playlist" else "Create or Import Playlist", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = newPlaylistName,
+                        onValueChange = { newPlaylistName = it },
+                        label = { Text("Playlist name or Spotify playlist link") },
+                        placeholder = { Text("e.g. My Favorites or https://open.spotify.com/playlist/...") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            focusedLabelColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                            unfocusedLabelColor = MaterialTheme.colorScheme.secondary,
+                            cursorColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+                    Text(
+                        text = "Paste any Spotify playlist URL to import all tracks into MyPlayer!",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val input = newPlaylistName.trim()
+                        if (input.isNotBlank()) {
+                            if (isSpotifyInput) {
+                                viewModel.importSpotifyPlaylist(input) { _, _ -> }
+                            } else {
+                                viewModel.createPlaylist(input)
+                            }
                             newPlaylistName = ""; showCreatePlaylistDialog = false
                         }
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)
-                ) { Text("Create", fontWeight = FontWeight.Bold) }
+                ) { Text(if (isSpotifyInput) "Import" else "Create", fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
                 TextButton(
@@ -269,12 +356,19 @@ fun LibraryScreen(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clickable { /* Toggle sort */ }
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { sortAscending = !sortAscending }
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
             ) {
                 Icon(Icons.Filled.SwapVert, contentDescription = null, tint = Secondary, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    text = if (selectedTab == 0) "Alphabetical" else "Recently Added",
+                    text = if (selectedTab == 0) {
+                        if (sortAscending) "Alphabetical (A–Z)" else "Alphabetical (Z–A)"
+                    } else {
+                        if (sortAscending) "Recently Added" else "Oldest First"
+                    },
                     style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
                     color = OnSurface
                 )
@@ -298,18 +392,28 @@ fun LibraryScreen(
 
         when (selectedTab) {
             0 -> HybridSongsTab(
-                songs = remember(downloadedSongs) { downloadedSongs.sortedBy { it.title.lowercase() } },
+                songs = remember(downloadedSongs, sortAscending) {
+                    if (sortAscending) downloadedSongs.sortedBy { it.title.lowercase() }
+                    else downloadedSongs.sortedByDescending { it.title.lowercase() }
+                },
                 onPlaySong = onPlaySong,
                 onAddToPlaylist = { songToAddToPlaylist = it },
                 onRemoveDownload = { songToRemoveDownload = it },
                 bottomPadding = bottomPadding
             )
             else -> PlaylistsTab(
-                playlists = playlists,
+                playlists = remember(playlists, sortAscending) {
+                    if (sortAscending) playlists.sortedByDescending { it.createdAt }
+                    else playlists.sortedBy { it.createdAt }
+                },
                 favoriteSongs = favoriteSongs,
                 onPlayFavoriteSongs = { onPlaySong(favoriteSongs, 0) },
                 onCreatePlaylist = { showCreatePlaylistDialog = true },
                 onDeletePlaylist = viewModel::deletePlaylist,
+                onRenamePlaylist = { playlist ->
+                    playlistToRename = playlist
+                    renameInput = playlist.name
+                },
                 onPlaylistClick = onPlaylistClick,
                 bottomPadding = bottomPadding
             )
@@ -556,6 +660,7 @@ fun PlaylistsTab(
     onPlayFavoriteSongs: () -> Unit,
     onCreatePlaylist: () -> Unit,
     onDeletePlaylist: (PlaylistEntity) -> Unit,
+    onRenamePlaylist: (PlaylistEntity) -> Unit = {},
     onPlaylistClick: (Long) -> Unit,
     bottomPadding: Dp
 ) {
@@ -767,6 +872,9 @@ fun PlaylistsTab(
                         )
                     }
 
+                    IconButton(onClick = { onRenamePlaylist(playlist) }) {
+                        Icon(Icons.Filled.Edit, contentDescription = "Rename", tint = Secondary)
+                    }
                     IconButton(onClick = { showDeleteConfirm = true }) {
                         Icon(Icons.Filled.DeleteOutline, contentDescription = "Delete", tint = Secondary)
                     }

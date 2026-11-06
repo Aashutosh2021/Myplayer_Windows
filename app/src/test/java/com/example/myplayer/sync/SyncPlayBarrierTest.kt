@@ -126,6 +126,7 @@ class SyncPlayBarrierTest {
             override fun searchSongs(query: String): Flow<List<SongEntity>> = flowOf(emptyList())
             override suspend fun getAllSongsSync(): List<SongEntity> = localSongs.toList()
             override suspend fun getSongByVideoId(videoId: String): SongEntity? = localSongs.find { it.videoId == videoId }
+            override suspend fun updateSongVideoId(id: String, videoId: String) {}
         }
 
         val fakeDownloadedDao = object : DownloadedSongDao {

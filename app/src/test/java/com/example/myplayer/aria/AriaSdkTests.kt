@@ -28,6 +28,7 @@ class AriaSdkTests {
         override fun getMostPlayedSongs(): Flow<List<SongEntity>> = flowOf(emptyList())
         override fun incrementPlayCount(id: String) {}
         override fun updateSongPath(id: String, path: String) {}
+        override suspend fun updateSongVideoId(id: String, videoId: String) {}
         override fun searchSongs(query: String): Flow<List<SongEntity>> = flowOf(emptyList())
     }
 

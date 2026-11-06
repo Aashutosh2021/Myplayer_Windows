@@ -25,6 +25,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -42,13 +43,58 @@ class HomeViewModel @Inject constructor(
     private val innertubeApi: InnertubeApi,
     private val recommendationCache: RecommendationCache,
     private val lastFmRecommendationSource: LastFmRecommendationSource,
-    private val aiModel: OnDeviceMusicAiModel
+    private val aiModel: OnDeviceMusicAiModel,
+    val spotifyManager: com.example.myplayer.data.spotify.SpotifyIntegrationManager
 ) : ViewModel() {
 
     private val _userState = MutableStateFlow<RecommendationUserState?>(null)
     val userState: StateFlow<RecommendationUserState?> = _userState.asStateFlow()
 
     val selectedCategory = MutableStateFlow("All")
+
+    val isSpotifyLoggedIn = spotifyManager.isLoggedIn
+    val spotifyUsername = spotifyManager.username
+    val isSpotifySyncing = spotifyManager.isSyncing
+    private var aiTrainingJob: Job? = null
+
+    private val _showTasteOnboarding = MutableStateFlow(!aiModel.hasCompletedTasteOnboarding())
+    val showTasteOnboarding: StateFlow<Boolean> = _showTasteOnboarding.asStateFlow()
+
+    private val _selectedLanguages = MutableStateFlow(aiModel.getSelectedLanguages())
+    val selectedLanguages: StateFlow<Set<String>> = _selectedLanguages.asStateFlow()
+
+    private val _selectedGenres = MutableStateFlow(aiModel.getSelectedGenres())
+    val selectedGenres: StateFlow<Set<String>> = _selectedGenres.asStateFlow()
+
+    private val _selectedArtists = MutableStateFlow(aiModel.getSelectedArtists())
+    val selectedArtists: StateFlow<Set<String>> = _selectedArtists.asStateFlow()
+
+    fun openTasteSelector() {
+        _selectedLanguages.value = aiModel.getSelectedLanguages()
+        _selectedGenres.value = aiModel.getSelectedGenres()
+        _selectedArtists.value = aiModel.getSelectedArtists()
+        _showTasteOnboarding.value = true
+    }
+
+    fun dismissTasteSelector() {
+        _showTasteOnboarding.value = false
+    }
+
+    fun saveUserTastePreferences(
+        languages: Set<String>,
+        genres: Set<String>,
+        artists: Set<String>
+    ) {
+        _selectedLanguages.value = languages
+        _selectedGenres.value = genres
+        _selectedArtists.value = artists
+        _showTasteOnboarding.value = false
+        viewModelScope.launch(Dispatchers.IO) {
+            aiModel.saveUserTasteProfile(languages, genres, artists)
+            _categoryRecommendations.value = emptyMap()
+            refreshAiRecommendations()
+        }
+    }
 
     private val _categoryRecommendations = MutableStateFlow<Map<String, List<RecommendationSong>>>(emptyMap())
 
@@ -141,7 +187,7 @@ class HomeViewModel @Inject constructor(
             }
         }
 
-        // 2. Auto-train AI whenever user plays/skips/completes a song!
+        // 2. Observe played song — WAIT 4 SECONDS after click before doing ANY AI or Spotify work!
         viewModelScope.launch {
             combine(
                 musicController.currentSong,
@@ -154,15 +200,47 @@ class HomeViewModel @Inject constructor(
                 }
             }.collect { played ->
                 if (played != null && played[0].isNotBlank()) {
-                    aiModel.onSongTransition(
-                        videoId = played[0],
-                        title = played[1],
-                        artist = played[2],
-                        durationMs = played[3].toLongOrNull() ?: 0L
-                    )
-                    // Refresh recommendations after learning first song if list was empty
-                    if (_aiRecommendations.value.isEmpty()) {
-                        refreshAiRecommendations()
+                    val playedId = played[0]
+                    val playedTitle = played[1]
+                    val playedArtist = played[2]
+                    val playedDur = played[3].toLongOrNull() ?: 0L
+
+                    // Cancel any previous background AI/Spotify job so 100% bandwidth goes to the clicked song!
+                    aiTrainingJob?.cancel()
+                    aiTrainingJob = viewModelScope.launch(Dispatchers.IO) {
+                        // Let the clicked song resolve and start playing first with ZERO competition!
+                        delay(4_000L)
+
+                        aiModel.onSongTransition(
+                            videoId = playedId,
+                            title = playedTitle,
+                            artist = playedArtist,
+                            durationMs = playedDur
+                        )
+                        // Refresh recommendations after learning first song if list was empty
+                        if (_aiRecommendations.value.isEmpty()) {
+                            refreshAiRecommendations()
+                        }
+
+                        // Wait another 8s (total 12s of listening) before syncing with Spotify
+                        if (spotifyManager.isLoggedIn.value) {
+                            delay(8_000L)
+                            val stillPlayingSame =
+                                (musicController.currentOnlineSong.value?.title == playedTitle) ||
+                                (musicController.currentSong.value?.title == playedTitle)
+
+                            if (stillPlayingSame) {
+                                val newSpotifyRecos = spotifyManager.reportPlayedSongAndFetchSpotifyRecommendations(
+                                    title = playedTitle,
+                                    artist = playedArtist,
+                                    syncToSpotifyLibrary = true
+                                )
+                                if (newSpotifyRecos.isNotEmpty()) {
+                                    _categoryRecommendations.value = emptyMap()
+                                    refreshAiRecommendations()
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -179,6 +257,24 @@ class HomeViewModel @Inject constructor(
                 delay(15 * 60 * 1000L)
                 refreshAiRecommendations()
             }
+        }
+
+        // 5. Background Spotify taste-sync (delayed 4s so it NEVER slows down app startup)
+        viewModelScope.launch(Dispatchers.IO) {
+            delay(4_000L)
+            if (spotifyManager.isLoggedIn.value) {
+                spotifyManager.syncSpotifyTasteIntoAi()
+                // FIX: Refresh UI immediately after Spotify taste is seeded into AI!
+                _categoryRecommendations.value = emptyMap()
+                refreshAiRecommendations()
+            }
+        }
+    }
+
+    fun syncSpotifyTasteAndRefresh() {
+        viewModelScope.launch {
+            spotifyManager.syncSpotifyTasteIntoAi()
+            refreshAiRecommendations()
         }
     }
 
@@ -266,9 +362,10 @@ class HomeViewModel @Inject constructor(
     fun playSong(songs: List<SongEntity>, startIndex: Int) {
         musicController.playSongs(songs, startIndex)
         val song = songs.getOrNull(startIndex) ?: return
-        aiModel.onSongTransition(song.videoId ?: song.id, song.title, song.artist, song.duration)
-        viewModelScope.launch { repository.incrementPlayCount(song.id) }
-        viewModelScope.launch { repository.addRecentHistory(song.id) }
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.incrementPlayCount(song.id)
+            repository.addRecentHistory(song.id)
+        }
     }
 
     fun toggleFavorite(song: SongEntity, isCurrentlyFavorite: Boolean) {
@@ -295,8 +392,7 @@ class HomeViewModel @Inject constructor(
         musicController.playOnlineSongs(onlineSongs, clampedIndex)
         val selected = songs.getOrNull(clampedIndex)
         if (selected != null) {
-            aiModel.onSongTransition(selected.videoId, selected.title, selected.artist, selected.durationMs)
-            viewModelScope.launch {
+            viewModelScope.launch(Dispatchers.IO) {
                 repository.addRecentHistory(selected.videoId)
             }
         }

@@ -9,6 +9,7 @@ object C {
     const val USAGE_MEDIA = 1
     const val WAKE_MODE_NETWORK = 1
     const val ENCODING_PCM_16BIT = 2
+    const val ENCODING_PCM_FLOAT = 4
 }
 
 class MediaMetadata {

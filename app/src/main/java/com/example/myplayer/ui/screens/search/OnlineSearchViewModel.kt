@@ -211,17 +211,17 @@ class OnlineSearchViewModel @Inject constructor(
                 if (url != null) {
                     val playableSong = song.copy(streamUrl = url)
                     if (contextSongs.isNotEmpty()) {
-                        val index = contextSongs.indexOfFirst { it.videoId == song.videoId }
-                        if (index != -1) {
-                            val playlist = contextSongs.map { s ->
-                                if (s.videoId == song.videoId) playableSong else s
-                            }
-                            musicController.playOnlineSongs(playlist, index)
-                        } else {
-                            musicController.playOnlineSongs(listOf(playableSong) + contextSongs, 0)
+                        // Compose the queue in the selected song's context so next track
+                        // continues the vibe, not the next same-title YouTube search result.
+                        val (orderedList, index) = SearchQueueComposer.compose(song, contextSongs)
+                        val playlist = orderedList.map { s ->
+                            if (s.videoId == song.videoId) playableSong else s
                         }
+                        musicController.playOnlineSongs(playlist, index)
+                        extendQueueWithRadio(song, orderedList.drop(1))
                     } else {
                         musicController.playOnlineSong(playableSong)
+                        extendQueueWithRadio(song, emptyList())
                     }
                 } else {
                     _errorMessage.value = "Could not resolve stream URL for '${song.title}'"
@@ -233,6 +233,24 @@ class OnlineSearchViewModel @Inject constructor(
                 _errorMessage.value = "Streaming failed: ${e.message}"
             } finally {
                 _isLoadingStream.value = null
+            }
+        }
+    }
+
+    /**
+     * After playback has started, swap the upcoming part of the queue for YouTube Music's radio of
+     * the selected song (vibe-matched by YouTube), vetted by [SearchQueueComposer]. The first song
+     * is never delayed by this; on any failure the search-based queue simply stays.
+     */
+    private fun extendQueueWithRadio(seed: OnlineSong, vettedSearch: List<OnlineSong>) {
+        viewModelScope.launch {
+            try {
+                val radio = withContext(Dispatchers.IO) { innertubeApi.getNextRadioTracks(seed.videoId) }
+                if (radio.isEmpty()) return@launch
+                val tail = SearchQueueComposer.composeRadioTail(seed, radio, vettedSearch)
+                if (tail.isNotEmpty()) musicController.replaceUpcomingOnlineQueue(seed.videoId, tail)
+            } catch (e: Exception) {
+                Log.w("OnlineSearchViewModel", "Radio queue extension failed", e)
             }
         }
     }

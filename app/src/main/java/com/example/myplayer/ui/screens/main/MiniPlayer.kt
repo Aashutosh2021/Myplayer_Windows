@@ -53,6 +53,20 @@ fun MiniPlayer(
         label = "miniSwipe"
     )
 
+    // Funny mood / vibe-check streak tracker + its popup
+    LaunchedEffect(song.title, song.artist, song.album, isPlaying) {
+        com.example.myplayer.ui.myplayer.MyPlayerVibeCheckManager.onPlaybackTick(
+            song.title, song.artist, song.album, isPlaying
+        )
+    }
+    com.example.myplayer.ui.myplayer.MyPlayerVibeCheckManager.activePopup?.let { event ->
+        com.example.myplayer.ui.myplayer.MyPlayerVibeCheckPopupDialog(
+            event = event,
+            onDismiss = { com.example.myplayer.ui.myplayer.MyPlayerVibeCheckManager.dismissPopup() },
+            onSwitchVibeClick = onNextClick
+        )
+    }
+
     Box(
         modifier = modifier
             .fillMaxWidth()

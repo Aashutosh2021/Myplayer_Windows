@@ -1,12 +1,17 @@
 package com.example.myplayer.sync.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Build
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -18,24 +23,41 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.AddCircleOutline
+import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.SettingsEthernet
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -43,12 +65,25 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.myplayer.data.local.entity.SongEntity
 import com.example.myplayer.sync.DeviceSyncStatus
+import com.example.myplayer.sync.LtConnectionState
+import com.example.myplayer.sync.LtRole
+import com.example.myplayer.sync.LtRoomUiState
 import com.example.myplayer.sync.SyncConnectionState
 import com.example.myplayer.sync.SyncDevice
 import com.example.myplayer.sync.SyncPlaybackState
 import com.example.myplayer.sync.SyncRole
 import com.example.myplayer.ui.common.AlbumArtImage
+import com.example.myplayer.ui.theme.CardBorderOlive
+import com.example.myplayer.ui.theme.NeonLimePrimary
+import com.example.myplayer.ui.theme.OnNeonLime
+import com.example.myplayer.ui.theme.OnSurface
+import com.example.myplayer.ui.theme.OnSurfaceVariant
+import com.example.myplayer.ui.theme.PureWhite
+import com.example.myplayer.ui.theme.SurfaceContainer
+import com.example.myplayer.ui.theme.SurfaceContainerHigh
+import com.example.myplayer.ui.theme.SurfaceLight
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,6 +94,18 @@ fun SyncPlayScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val currentSong by viewModel.currentSong.collectAsState()
+    val ltState by viewModel.ltState.collectAsState()
+
+    // 0 = Online Room Code (Listen Together), 1 = Local Wi-Fi Sync Play
+    var selectedTab by rememberSaveable {
+        mutableIntStateOf(if (state.role != SyncRole.NONE) 1 else 0)
+    }
+
+    // Automatically switch tab if a session is active in one of the modes
+    LaunchedEffect(state.role, ltState.role) {
+        if (ltState.role != LtRole.NONE) selectedTab = 0
+        else if (state.role != SyncRole.NONE) selectedTab = 1
+    }
 
     var showJoinByIpDialog by remember { mutableStateOf(false) }
     var inputIp by remember { mutableStateOf("") }
@@ -71,13 +118,16 @@ fun SyncPlayScreen(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = Icons.Default.Sync,
+                            imageVector = if (selectedTab == 0) Icons.Default.Groups else Icons.Default.Sync,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(24.dp)
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text("Sync Play", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (selectedTab == 0) "Listen Together" else "Sync Play",
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 },
                 navigationIcon = {
@@ -89,12 +139,15 @@ fun SyncPlayScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showUserManual = !showUserManual }) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.HelpOutline,
-                            contentDescription = "User Manual",
-                            tint = if (showUserManual) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    // User manual is a Local Wi-Fi Sync feature — hide it on the online Listen Together tab
+                    if (selectedTab == 1) {
+                        IconButton(onClick = { showUserManual = !showUserManual }) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.HelpOutline,
+                                contentDescription = "User Manual",
+                                tint = if (showUserManual) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -112,6 +165,42 @@ fun SyncPlayScreen(
                 .padding(horizontal = 24.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // ── Mode Switcher Pill (Online Room Code vs Local Wi-Fi Sync) ─────
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(SurfaceContainer)
+                    .border(BorderStroke(1.dp, CardBorderOlive), RoundedCornerShape(18.dp))
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                ModeTabButton(
+                    title = "Listen Together (Code)",
+                    icon = Icons.Default.Public,
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    modifier = Modifier.weight(1f)
+                )
+                ModeTabButton(
+                    title = "Local Wi-Fi Sync",
+                    icon = Icons.Default.Wifi,
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(Modifier.height(18.dp))
+
+            if (selectedTab == 0) {
+                OnlineListenTogetherSection(
+                    ltState = ltState,
+                    currentSong = currentSong,
+                    viewModel = viewModel,
+                    onNavigateToNowPlaying = onNavigateToNowPlaying
+                )
+            } else {
             // Error banner if any
             AnimatedVisibility(
                 visible = state.errorMessage != null,
@@ -821,6 +910,7 @@ fun SyncPlayScreen(
                     Text("LEAVE ROOM", fontWeight = FontWeight.Bold)
                 }
             }
+            } // end Local Wi-Fi Sync tab
         }
     }
 
@@ -1179,6 +1269,462 @@ private fun SyncPlayManualStep(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 lineHeight = 18.sp
+            )
+        }
+    }
+}
+
+// ============================================================================
+// TAB 1: ONLINE LISTEN TOGETHER (MELD ROOM CODE OVER INTERNET)
+// ============================================================================
+
+@Composable
+private fun OnlineListenTogetherSection(
+    ltState: LtRoomUiState,
+    currentSong: SongEntity?,
+    viewModel: SyncPlayViewModel,
+    onNavigateToNowPlaying: () -> Unit
+) {
+    // Desktop shim context — Toast / ClipboardManager are served by the android.* shims.
+    val context = LocalContext.current
+    var usernameInput by rememberSaveable(ltState.username) { mutableStateOf(ltState.username) }
+    var roomCodeInput by rememberSaveable { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        ltState.errorMessage?.let { err ->
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.ErrorOutline, null, tint = MaterialTheme.colorScheme.error)
+                    Spacer(Modifier.width(10.dp))
+                    Text(err, color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+
+        if (ltState.role == LtRole.NONE) {
+            // Create Online Room Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceLight),
+                border = BorderStroke(1.dp, CardBorderOlive),
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clip(CircleShape)
+                            .background(NeonLimePrimary),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Headphones, null, tint = OnNeonLime, modifier = Modifier.size(26.dp))
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "Listen Together Anywhere",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = OnSurface
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Not on the same Wi-Fi? Create a 6-digit Room Code and listen in real-time with friends over Mobile Data / Internet.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = OnSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(Modifier.height(16.dp))
+
+                    OutlinedTextField(
+                        value = usernameInput,
+                        onValueChange = { usernameInput = it },
+                        label = { Text("Your Display Name") },
+                        placeholder = { Text("e.g. Aashutosh") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
+                    )
+
+                    Spacer(Modifier.height(14.dp))
+
+                    Button(
+                        onClick = { viewModel.createOnlineRoom(usernameInput) },
+                        enabled = ltState.connectionState != LtConnectionState.CONNECTING,
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = NeonLimePrimary,
+                            contentColor = OnNeonLime
+                        )
+                    ) {
+                        if (ltState.connectionState == LtConnectionState.CONNECTING && !ltState.waitingForApproval) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = OnNeonLime, strokeWidth = 2.dp)
+                            Spacer(Modifier.width(10.dp))
+                        } else {
+                            Icon(Icons.Default.AddCircleOutline, null)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text("Create Room Code (Host)", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            // Join Online Room by Code Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceLight),
+                border = BorderStroke(1.dp, CardBorderOlive),
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text(
+                        "Join with Room Code",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = OnSurface
+                    )
+                    Spacer(Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = roomCodeInput,
+                        onValueChange = { roomCodeInput = it.uppercase().take(8) },
+                        label = { Text("Enter 6-Digit Room Code") },
+                        placeholder = { Text("e.g. AB12CD") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    Button(
+                        onClick = { viewModel.joinOnlineRoom(roomCodeInput, usernameInput) },
+                        enabled = roomCodeInput.isNotBlank() && !ltState.waitingForApproval,
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = SurfaceContainerHigh,
+                            contentColor = OnSurface
+                        )
+                    ) {
+                        if (ltState.waitingForApproval) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), color = NeonLimePrimary, strokeWidth = 2.dp)
+                            Spacer(Modifier.width(10.dp))
+                            Text("Waiting for Host Approval...", fontWeight = FontWeight.SemiBold)
+                        } else {
+                            Icon(Icons.Default.Login, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Join Room", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        } else {
+            val isHost = ltState.role == LtRole.HOST
+
+            // Active Room Code Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceLight),
+                border = BorderStroke(1.dp, NeonLimePrimary),
+                shape = RoundedCornerShape(22.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = if (isHost) "HOSTING ONLINE ROOM" else "CONNECTED AS GUEST",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = NeonLimePrimary
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = ltState.roomCode,
+                        style = MaterialTheme.typography.headlineLarge.copy(
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = 4.sp
+                        ),
+                        color = OnSurface
+                    )
+                    Spacer(Modifier.height(14.dp))
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                cm.setPrimaryClip(ClipData.newPlainText("Room Code", ltState.roomCode))
+                                Toast.makeText(context, "Room code ${ltState.roomCode} copied!", Toast.LENGTH_SHORT).show()
+                            },
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Copy Code")
+                        }
+
+                        // shortcut: Desktop has no share sheet (Intent shim has no ACTION_SEND) —
+                        // "Share" copies the invite text to the clipboard instead (Toast confirms).
+                        Button(
+                            onClick = {
+                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                cm.setPrimaryClip(
+                                    ClipData.newPlainText(
+                                        "Room Code",
+                                        "Join my Listen Together room on MyPlayer! Room Code: ${ltState.roomCode}"
+                                    )
+                                )
+                                Toast.makeText(
+                                    context,
+                                    "Invite message copied — share it from any chat app",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = NeonLimePrimary,
+                                contentColor = OnNeonLime
+                            )
+                        ) {
+                            Icon(Icons.Default.Share, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Share", fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    if (isHost) {
+                        Spacer(Modifier.height(14.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Auto-approve join requests", style = MaterialTheme.typography.bodyMedium, color = OnSurface)
+                            Switch(
+                                checked = ltState.autoApproveJoins,
+                                onCheckedChange = { viewModel.setAutoApprove(it) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Currently Synced Track Card
+            val activeTitle = ltState.currentTrack?.title ?: currentSong?.title
+            val activeArtist = ltState.currentTrack?.artist ?: currentSong?.artist
+            val activeArt = ltState.currentTrack?.thumbnail ?: currentSong?.albumArt
+
+            if (!activeTitle.isNullOrBlank()) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SurfaceLight),
+                    border = BorderStroke(1.dp, CardBorderOlive),
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onNavigateToNowPlaying() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AlbumArtImage(
+                            uri = activeArt,
+                            title = activeTitle,
+                            artist = activeArtist,
+                            size = 50.dp,
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Synced Track", style = MaterialTheme.typography.labelSmall, color = NeonLimePrimary)
+                            Text(activeTitle, fontWeight = FontWeight.Bold, color = OnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(activeArtist ?: "", style = MaterialTheme.typography.bodySmall, color = OnSurfaceVariant, maxLines = 1)
+                        }
+                        if (!isHost && currentSong != null) {
+                            OutlinedButton(
+                                onClick = { viewModel.suggestCurrentSong() },
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("Suggest", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Pending Join Requests (Host Only)
+            if (isHost && ltState.pendingJoinRequests.isNotEmpty()) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SurfaceLight),
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Pending Join Requests", fontWeight = FontWeight.Bold, color = OnSurface)
+                        ltState.pendingJoinRequests.forEach { req ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(req.username, fontWeight = FontWeight.SemiBold, color = OnSurface)
+                                Row {
+                                    IconButton(onClick = { viewModel.approveJoin(req.userId) }) {
+                                        Icon(Icons.Default.CheckCircle, "Approve", tint = NeonLimePrimary)
+                                    }
+                                    IconButton(onClick = { viewModel.rejectJoin(req.userId) }) {
+                                        Icon(Icons.Default.Cancel, "Reject", tint = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Pending Song Suggestions (Host Only)
+            if (isHost && ltState.pendingSuggestions.isNotEmpty()) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SurfaceLight),
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Suggested Songs", fontWeight = FontWeight.Bold, color = OnSurface)
+                        ltState.pendingSuggestions.forEach { sug ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(sug.track.title, fontWeight = FontWeight.SemiBold, color = OnSurface, maxLines = 1)
+                                    Text("by ${sug.fromUsername}", style = MaterialTheme.typography.bodySmall, color = OnSurfaceVariant)
+                                }
+                                Row {
+                                    IconButton(onClick = { viewModel.approveSuggestion(sug) }) {
+                                        Icon(Icons.Default.PlayCircle, "Play", tint = NeonLimePrimary)
+                                    }
+                                    IconButton(onClick = { viewModel.rejectSuggestion(sug.suggestionId) }) {
+                                        Icon(Icons.Default.Cancel, "Reject", tint = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Connected Users List
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceLight),
+                border = BorderStroke(1.dp, CardBorderOlive),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "Listeners in Room (${ltState.users.size})",
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        color = OnSurface
+                    )
+                    ltState.users.forEach { user ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    if (user.isHost) Icons.Default.Star else Icons.Default.Person,
+                                    contentDescription = null,
+                                    tint = if (user.isHost) NeonLimePrimary else OnSurfaceVariant,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    text = "${user.username}${if (user.userId == ltState.userId) " (You)" else ""}",
+                                    fontWeight = if (user.isHost) FontWeight.Bold else FontWeight.Medium,
+                                    color = OnSurface
+                                )
+                            }
+                            if (isHost && user.userId != ltState.userId) {
+                                Row {
+                                    TextButton(onClick = { viewModel.transferHost(user.userId) }) {
+                                        Text("Make Host", fontSize = 12.sp, color = NeonLimePrimary)
+                                    }
+                                    IconButton(onClick = { viewModel.kickUser(user.userId) }) {
+                                        Icon(Icons.Default.PersonRemove, "Kick", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Button(
+                onClick = { viewModel.leaveOnlineRoom() },
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = PureWhite
+                )
+            ) {
+                Icon(Icons.Default.ExitToApp, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Leave Online Room", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+// ============================================================================
+// TAB MODE BUTTON FOR THE ONLINE / LOCAL SWITCHER PILL
+// ============================================================================
+
+@Composable
+private fun ModeTabButton(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .height(42.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (selected) NeonLimePrimary else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (selected) OnNeonLime else OnSurfaceVariant,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = title,
+                fontSize = 12.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                color = if (selected) OnNeonLime else OnSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }

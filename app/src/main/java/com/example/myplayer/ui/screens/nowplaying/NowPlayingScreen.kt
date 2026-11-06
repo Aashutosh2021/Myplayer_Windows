@@ -1,5 +1,7 @@
 package com.example.myplayer.ui.screens.nowplaying
 
+import android.content.Context
+import android.os.PowerManager
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
@@ -28,6 +30,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -41,6 +44,7 @@ import coil.compose.AsyncImage
 import com.example.myplayer.data.local.entity.PlaylistEntity
 import com.example.myplayer.playback.AudioQualityInfo
 import com.example.myplayer.playback.PlaybackSourceContext
+import com.example.myplayer.ui.common.AlbumArtImage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,7 +88,8 @@ fun NowPlayingScreen(
     onAddTrackToPlaylist: (Long, SideTrackItem) -> Unit = { _, _ -> },
     onCreatePlaylistAndAdd: (String) -> Unit = {},
     playerVolume: Float = 1.0f,
-    onVolumeChange: (Float) -> Unit = {}
+    onVolumeChange: (Float) -> Unit = {},
+    onOpenCustomizeStyles: () -> Unit = {}
 ) {
     var showSleepTimer by remember { mutableStateOf(false) }
     var showRemoveConfirm by remember { mutableStateOf(false) }
@@ -152,6 +157,22 @@ fun NowPlayingScreen(
             onSave = { lyricsViewModel.saveCustomLyrics(it) },
             onDelete = if (isCustomPresent) ({ lyricsViewModel.deleteLyrics() }) else null
         )
+    }
+
+    // Lyrics keep-awake wiring (mirrors Android NowPlayingScreen's localView.keepScreenOn):
+    // shortcut: Android LocalView.KeepScreenOn window flag has no desktop counterpart —
+    // Windows holds the no-op PowerManager.WakeLock shim instead, so the checkbox binding
+    // stays purely UI/state-driven and the screen is never actually held awake.
+    val keepAwakeLyrics by lyricsViewModel.keepScreenAwakeLyrics.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    DisposableEffect(keepAwakeLyrics) {
+        val wakeLock = (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MyPlayer:NowPlayingLyricsKeepAwake")
+        wakeLock.setReferenceCounted(false)
+        if (keepAwakeLyrics) wakeLock.acquire()
+        onDispose {
+            wakeLock.release()
+        }
     }
 
     if (showQualityDetails) {
@@ -558,6 +579,11 @@ fun NowPlayingScreen(
                                     )
                                 }
                                 DropdownMenuItem(
+                                    text = { Text("Customize Player Styles", color = Color.White) },
+                                    leadingIcon = { Icon(Icons.Filled.Star, null, tint = Color.White) },
+                                    onClick = { showMoreSheet = false; onOpenCustomizeStyles() }
+                                )
+                                DropdownMenuItem(
                                     text = { Text("Settings", color = Color.White) },
                                     leadingIcon = { Icon(Icons.Filled.Settings, null, tint = Color.White) },
                                     onClick = { showMoreSheet = false; onNavigateToSettings() }
@@ -587,65 +613,53 @@ fun NowPlayingScreen(
                                 .clip(RoundedCornerShape(24.dp))
                         )
                     } else {
+                        // Desktop Hero Album Art with Title & Artist matching tablet/desktop layout
                         Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center
                         ) {
-                            // Large Squircle Album Art with Soft Shadow
-                            Box(
+                            AlbumArtImage(
+                                artUri = artUri,
+                                title = title,
+                                artist = artist,
+                                size = 260.dp,
+                                cornerRadius = 32.dp,
+                                iconSize = 80.dp,
                                 modifier = Modifier
-                                    .size(260.dp)
                                     .shadow(
-                                        elevation = 24.dp,
+                                        elevation = 16.dp,
                                         shape = RoundedCornerShape(32.dp),
-                                        spotColor = Color.Black.copy(alpha = 0.5f)
+                                        spotColor = Color(0x66000000)
                                     )
-                                    .clip(RoundedCornerShape(32.dp))
-                                    .background(Color(0xFF2C313C)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (!artUri.isNullOrBlank()) {
-                                    AsyncImage(
-                                        model = artUri,
-                                        contentDescription = null,
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                } else {
-                                    Icon(
-                                        Icons.Filled.MusicNote,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(80.dp)
-                                    )
-                                }
-                            }
+                            )
 
-                            Spacer(Modifier.height(26.dp))
+                            Spacer(Modifier.height(24.dp))
 
-                            // Song Title
                             Text(
-                                text = title ?: "No song playing",
+                                text = title ?: "No Song Playing",
                                 color = Color.White,
-                                fontSize = 24.sp,
+                                fontSize = 22.sp,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 24.dp)
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
                             )
 
                             Spacer(Modifier.height(6.dp))
 
-                            // Artist
                             Text(
-                                text = artist ?: "Unknown",
-                                color = Color(0xFF8E95A1),
-                                fontSize = 15.sp,
+                                text = artist ?: "Unknown Artist",
+                                color = Color(0xFF9AA0A8),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Normal,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 24.dp)
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
                             )
                         }
                     }
@@ -772,12 +786,17 @@ fun NowPlayingScreen(
                     }
 
                     // 3. Play / Pause
-                    IconButton(onClick = onPlayPauseClick, modifier = Modifier.size(54.dp)) {
+                    IconButton(
+                        onClick = onPlayPauseClick,
+                        modifier = Modifier
+                            .size(54.dp)
+                            .background(Color.White, CircleShape)
+                    ) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                             contentDescription = if (isPlaying) "Pause" else "Play",
-                            tint = Color.White,
-                            modifier = Modifier.size(46.dp)
+                            tint = Color(0xFF171C26),
+                            modifier = Modifier.size(32.dp)
                         )
                     }
 

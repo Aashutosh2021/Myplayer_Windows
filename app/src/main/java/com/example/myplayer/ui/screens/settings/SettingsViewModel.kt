@@ -12,6 +12,10 @@ import com.example.myplayer.data.local.prefs.PreferencesManager
 import com.example.myplayer.data.update.NoInternetException
 import com.example.myplayer.data.update.UpdateChecker
 import com.example.myplayer.data.update.UpdateInfo
+import com.example.myplayer.data.preferences.AudioPlaybackConfig
+import com.example.myplayer.data.preferences.AudioSettingsRepository
+import com.example.myplayer.data.preferences.ClarityPreset
+import com.example.myplayer.data.preferences.StreamQuality
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,8 +47,57 @@ class SettingsViewModel @Inject constructor(
     private val settingsDataStore: SettingsDataStore,
     private val preferencesManager: PreferencesManager,
     private val backupRestoreManager: BackupRestoreManager,
-    private val updateChecker: UpdateChecker
+    private val updateChecker: UpdateChecker,
+    val spotifyManager: com.example.myplayer.data.spotify.SpotifyIntegrationManager,
+    private val audioSettingsRepository: AudioSettingsRepository,
+    val audioPlaybackStore: com.example.myplayer.data.preferences.AudioPlaybackStore,
+    val audioFeatureManagers: com.example.myplayer.playback.AudioFeatureManagers
 ) : ViewModel() {
+
+    val audioConfig = audioSettingsRepository.configFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AudioPlaybackConfig())
+
+    val isSpotifyLoggedIn = spotifyManager.isLoggedIn
+    val spotifyUsername = spotifyManager.username
+    val isSpotifySyncing = spotifyManager.isSyncing
+
+    private val _spotifySyncMessage = MutableStateFlow<String?>(null)
+    val spotifySyncMessage = _spotifySyncMessage.asStateFlow()
+
+    fun clearSpotifySyncMessage() {
+        _spotifySyncMessage.value = null
+    }
+
+    fun syncSpotify() {
+        viewModelScope.launch {
+            val res = spotifyManager.syncAllSpotifyLibraryAndPlaylists()
+            res.onSuccess { result ->
+                _spotifySyncMessage.value = "Synced ${result.playlistsCount} playlists & ${result.totalTracksSynced} songs from Spotify!"
+            }.onFailure { e ->
+                _spotifySyncMessage.value = "Spotify sync failed: ${e.message}"
+            }
+        }
+    }
+
+    fun syncSpotifyTaste() {
+        syncSpotify()
+    }
+
+    fun importSpotifyPlaylist(urlOrId: String) {
+        viewModelScope.launch {
+            _spotifySyncMessage.value = "Importing Spotify playlist..."
+            val res = spotifyManager.importPlaylistByUrl(urlOrId)
+            res.onSuccess { (title, count) ->
+                _spotifySyncMessage.value = "Imported '$title' ($count songs) from Spotify!"
+            }.onFailure { e ->
+                _spotifySyncMessage.value = "Failed to import playlist: ${e.message}"
+            }
+        }
+    }
+
+    fun logoutSpotify() {
+        spotifyManager.logout()
+    }
 
     private val _backupState = MutableStateFlow<BackupRestoreState>(BackupRestoreState.Idle)
     val backupState = _backupState.asStateFlow()
@@ -80,6 +133,30 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             preferencesManager.setDownloadFolderUri(uri)
         }
+    }
+
+    fun updateWifiQuality(quality: StreamQuality) {
+        viewModelScope.launch { audioSettingsRepository.updateWifiQuality(quality) }
+    }
+
+    fun updateMobileQuality(quality: StreamQuality) {
+        viewModelScope.launch { audioSettingsRepository.updateMobileQuality(quality) }
+    }
+
+    fun updateClarityPreset(preset: ClarityPreset) {
+        viewModelScope.launch { audioSettingsRepository.updateClarityPreset(preset) }
+    }
+
+    fun updateTrueDolby(enabled: Boolean, width: Float = 0.45f) {
+        viewModelScope.launch { audioSettingsRepository.updateTrueDolby(enabled, width) }
+    }
+
+    fun updateLoudness(enabled: Boolean, gainMb: Int = 600) {
+        viewModelScope.launch { audioSettingsRepository.updateLoudness(enabled, gainMb) }
+    }
+
+    fun updateSkipSilence(enabled: Boolean) {
+        viewModelScope.launch { audioSettingsRepository.updateSkipSilence(enabled) }
     }
 
     fun resetStates() {

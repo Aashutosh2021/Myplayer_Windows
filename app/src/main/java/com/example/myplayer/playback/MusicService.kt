@@ -9,11 +9,24 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaController
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.example.myplayer.data.preferences.AudioPlaybackState
+import com.example.myplayer.data.preferences.AudioPlaybackStore
+import com.example.myplayer.data.preferences.AudioSettingsRepository
+import com.example.myplayer.data.preferences.LoudnessMode
+import com.example.myplayer.playback.dsp.LastWaveDspAudioProcessor
+import com.example.myplayer.playback.dsp.MasterAudioDspProcessor
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -27,6 +40,24 @@ class MusicService : MediaSessionService() {
 
     @Inject
     lateinit var playbackEventBus: PlaybackEventBus
+
+    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    @Volatile private var currentAudioPlaybackState = AudioPlaybackState()
+
+    // Master audio wiring (ported from Android). Desktop has no Hilt graph yet — Phase 3
+    // wires AppContainer-provided instances, so every dependency is resolved defensively.
+    private var audioPlaybackStore: AudioPlaybackStore? = null
+    private var audioSettingsRepository: AudioSettingsRepository? = null
+    private var audioFeatureManagers: AudioFeatureManagers? = null
+    private var masterAudioDspProcessor: MasterAudioDspProcessor? = null
+    private var lastWaveDspProcessor: LastWaveDspAudioProcessor? = null
+
+    // Composed DSP inputs from the two settings sources (store wins over legacy config);
+    // kept as volatiles so either collector can apply the full picture independently.
+    @Volatile private var currentEqEnabled: Boolean = false
+    @Volatile private var currentEqBandGains: List<Float>? = null
+    @Volatile private var currentLegacyPreampDb: Float = 0f
+    @Volatile private var currentStoreLoudnessActive: Boolean = false
 
     private var mediaSession: MediaSession? = null
     private var wakeLock: PowerManager.WakeLock? = null
@@ -165,6 +196,107 @@ class MusicService : MediaSessionService() {
                     .edit().putBoolean("playback_shuffle_mode", shuffleModeEnabled).apply()
             }
         })
+
+        initAudioFeatureManagers()
+    }
+
+    /**
+     * Master Audio & Playback Feature Integration (ported from Android):
+     * crossfade engine + 15-band EQ / loudness onto VLC's native equalizer + legacy
+     * audio-settings (clarity/spatial) onto the dual-bud DSP chain.
+     */
+    private fun initAudioFeatureManagers() {
+        // Resolve dependencies defensively — Android injects these with Hilt, but no DI
+        // graph exists inside the desktop service yet (Phase 3 wires AppContainer).
+        // The stores fall back to default flows and the DSP processors are constructible directly.
+        try {
+            audioPlaybackStore = AudioPlaybackStore()
+            audioSettingsRepository = AudioSettingsRepository()
+        } catch (e: Exception) {
+            println("[MusicService] Audio settings stores unavailable (defaults in use): ${e.message}")
+        }
+        try {
+            // Resolve the registered DSP singletons so these updates land in the audible
+            // pipeline (DesktopMyPlayerDspPipeline chain) — the same instances the
+            // AppContainer collectors feed, mirroring Android's shared Hilt singletons.
+            masterAudioDspProcessor = com.example.myplayer.di.AppContainer.resolveDependency(MasterAudioDspProcessor::class.java) as? MasterAudioDspProcessor
+            lastWaveDspProcessor = com.example.myplayer.di.AppContainer.resolveDependency(LastWaveDspAudioProcessor::class.java) as? LastWaveDspAudioProcessor
+        } catch (e: Exception) {
+            println("[MusicService] DSP processors unavailable: ${e.message}")
+        }
+        try {
+            // shortcut: lyrics-download().lrc needs the shared OkHttpClient (Phase 3); null just makes that helper a no-op.
+            audioFeatureManagers = AudioFeatureManagers()
+        } catch (e: Exception) {
+            println("[MusicService] Audio feature managers unavailable: ${e.message}")
+        }
+
+        // 1. Crossfade engine monitor — attached to the shared MediaController shim, not the
+        // service ExoPlayer: the controller's volume/duration/position/seekToNext drive
+        // DesktopAudioBackend (the audible VLC output), while the shim ExoPlayer's volume only
+        // reaches the dual-bud JavaSound sink, which is null on the regular playback path.
+        // shortcut: listeners (queue/transition events needed after seekToNext) live in MusicController; crossfade only needs the state it polls here.
+        try {
+            audioFeatureManagers?.attachCrossfadeMonitor(
+                scope = serviceScope,
+                player = MediaController.getShared(),
+                isEnabled = { currentAudioPlaybackState.crossfadeEnabled },
+                crossfadeDurationSec = currentAudioPlaybackState.crossfadeSeconds
+            )
+        } catch (e: Exception) {
+            println("[MusicService] Crossfade monitor unavailable: ${e.message}")
+        }
+
+        // 2. Observe Master Audio & Playback Preferences (15-Band EQ, Loudness, System Effects)
+        serviceScope.launch {
+            audioPlaybackStore?.stateFlow?.collect { state ->
+                currentAudioPlaybackState = state
+                currentEqEnabled = state.eqEnabled
+                currentEqBandGains = state.eqBandGains
+                currentStoreLoudnessActive = state.loudnessMode != LoudnessMode.OFF
+                masterAudioDspProcessor?.updateState(state)
+                applyDspParams()
+                // Android re-opens the audiofx control session per track (audioSessionId);
+                // desktop toggleSystemAudioEffects is a no-op, so there is nothing to re-emit here.
+                audioFeatureManagers?.toggleSystemAudioEffects(0, state.systemAudioEffects)
+            }
+        }
+
+        // Audio Lab speed & pitch — Android sets player.playbackParameters; desktop routes it
+        // into VLC's rate (pitch not supported by VLC).
+        com.example.myplayer.ui.myplayer.MyPlayerAudioFxDspBridge.onUpdatePlaybackSpeedPitch = { speed, _ ->
+            serviceScope.launch(Dispatchers.Main.immediate) {
+                try {
+                    DesktopAudioBackend.setSpeed(speed)
+                } catch (e: Exception) {
+                    println("[MusicService] Failed to set playback speed: ${e.message}")
+                }
+            }
+        }
+
+        // 3. Observe Legacy/Simple Audio Settings (Skip Silence, Clarity Presets, True-Dolby Spatial, Loudness Boost)
+        serviceScope.launch {
+            audioSettingsRepository?.configFlow?.collect { config ->
+                // shortcut: the desktop Player shim has no skipSilenceEnabled knob (VLC silence-skip not ported); setting is accepted but inaudible.
+                currentLegacyPreampDb = if (config.loudnessNormalize) {
+                    (config.loudnessGainMb / 100f).coerceIn(-LOUDNESS_PREAMP_MAX_DB, LOUDNESS_PREAMP_MAX_DB)
+                } else 0f
+                lastWaveDspProcessor?.updateDspConfig(
+                    preset = config.clarityPreset,
+                    dolby = config.trueDolbySpatial,
+                    width = config.spatialWidth
+                )
+                applyDspParams()
+            }
+        }
+    }
+
+    /** Composes both settings sources into one VLC DSP update: store EQ + store loudness
+     * mode (0 dB preamp on desktop — no per-track ReplayGain tags yet), falling back to the
+     * legacy loudness-boost config only when the store's loudness mode is OFF. */
+    private fun applyDspParams() {
+        val preampDb = if (currentStoreLoudnessActive) 0f else currentLegacyPreampDb
+        DesktopAudioBackend.setDspParams(currentEqEnabled, currentEqBandGains, preampDb)
     }
 
     private fun acquireLocks() {
@@ -220,6 +352,8 @@ class MusicService : MediaSessionService() {
 
     override fun onDestroy() {
         releaseLocks()
+        com.example.myplayer.ui.myplayer.MyPlayerAudioFxDspBridge.onUpdatePlaybackSpeedPitch = null
+        serviceScope.cancel()
         mediaSession?.run {
             player.release()
             release()

@@ -6,9 +6,16 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import uk.co.caprica.vlcj.factory.MediaPlayerFactory
 import uk.co.caprica.vlcj.factory.discovery.NativeDiscovery
+import uk.co.caprica.vlcj.player.base.Equalizer
 import uk.co.caprica.vlcj.player.base.MediaPlayer
 import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter
+import uk.co.caprica.vlcj.player.base.callback.DefaultAudioCallbackAdapter
+import com.example.myplayer.myplayerfx.DesktopMyPlayerDspPipeline
 import java.io.File
+import javax.sound.sampled.AudioSystem
+import javax.sound.sampled.SourceDataLine
+import kotlin.math.abs
+import kotlin.math.ln
 
 object DesktopAudioBackend {
     private var mediaPlayer: MediaPlayer? = null
@@ -16,7 +23,27 @@ object DesktopAudioBackend {
     var isVlcAvailable: Boolean = false
         private set
 
+    /**
+     * Desktop DSP warm path: VLC's callback aout (amem) pushes S16N PCM into
+     * DesktopMyPlayerDspPipeline (master EQ -> Audio Lab spatial/reverb/loudness -> volume stage)
+     * and the output is written to a Java Sound line. When this fails the player silently falls
+     * back to VLC's native output (which only carries the native equalizer).
+     */
+    private val CALLBACK_RATE = 48000
+    private val CALLBACK_CHANNELS = 2
+    private var soundLine: SourceDataLine? = null
+    private var currentRate: Float = 1f
+
     private val backendScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    // shortcut: 15-band UI folds onto VLC 10-band bins; clarity/spatial/skip-silence are not representable in the VLC native equalizer.
+    // VLC's native band table (fixed frequencies, Hz): 60, 170, 310, 600, 1k, 3k, 6k, 12k, 14k, 16k.
+    private val VLC_BAND_CENTERS = floatArrayOf(60f, 170f, 310f, 600f, 1000f, 3000f, 6000f, 12000f, 14000f, 16000f)
+    private const val VLC_EQ_BAND_COUNT = 10
+    private const val VLC_AMP_MIN_DB = -20f // libvlc equalizer band/preamp gain range in dB
+    private const val VLC_AMP_MAX_DB = 20f
+    private val dspLock = Any()
+    @Volatile private var lastDspSignature: String? = null
 
     private var onCompletionCallback: (() -> Unit)? = null
     private var onPlayingChangedCallback: ((Boolean) -> Unit)? = null
@@ -77,6 +104,13 @@ object DesktopAudioBackend {
             mediaPlayer = player
             isVlcAvailable = true
             println("[DesktopAudioBackend] VLC Media Engine initialized successfully.")
+            try {
+                // Mobile DSP chain (Audio Lab / Master EQ) needs raw PCM; switch VLC to its
+                // callback output and drive a Java Sound line through the Kotlin DSP processors.
+                enableCallbackAudio()
+            } catch (t: Throwable) {
+                println("[DesktopAudioBackend] DSP callback output unavailable: ${t.message}. VLC native output stays active.")
+            }
         } catch (t: Throwable) {
             println("[DesktopAudioBackend] VLC native engine not available: ${t.message}. Using fallback playback.")
             isVlcAvailable = false
@@ -93,6 +127,7 @@ object DesktopAudioBackend {
             resume()
             return
         }
+        DesktopMyPlayerDspPipeline.onTrackChange()
         currentPath = cleanPath
         isPaused = false
         if (isVlcAvailable && mediaPlayer != null) {
@@ -100,6 +135,10 @@ object DesktopAudioBackend {
                 mediaPlayer?.media()?.play(cleanPath)
                 if (startPositionMs > 0L) {
                     mediaPlayer?.controls()?.setTime(startPositionMs)
+                }
+                // VLC resets rate per media; carry the Audio Lab speed over.
+                if (abs(currentRate - 1f) > 0.001f) {
+                    try { mediaPlayer?.controls()?.setRate(currentRate) } catch (_: Exception) {}
                 }
                 return
             } catch (e: Exception) {
@@ -110,6 +149,60 @@ object DesktopAudioBackend {
         simulatedStartTime = System.currentTimeMillis() - startPositionMs
         isSimulatedPlaying = true
         onPlayingChangedCallback?.invoke(true)
+    }
+
+    /** Switches VLC to its callback audio output: PCM streams through the Kotlin DSP chain. */
+    private fun enableCallbackAudio() {
+        val player = requireNotNull(mediaPlayer)
+        DesktopMyPlayerDspPipeline.install()
+        val lineFormat = javax.sound.sampled.AudioFormat(
+            CALLBACK_RATE.toFloat(), 16, CALLBACK_CHANNELS, true, false
+        )
+        val line = AudioSystem.getSourceDataLine(lineFormat)
+        // ~120 ms ring: enough slack for DSP spikes, small enough to keep pauses tight.
+        line.open(lineFormat, CALLBACK_RATE * CALLBACK_CHANNELS * 2 * 120)
+        line.start()
+        soundLine = line
+        val adapter = object : DefaultAudioCallbackAdapter(CALLBACK_CHANNELS * 2) {
+            override fun onPlay(
+                mediaPlayer: MediaPlayer?,
+                samples: ByteArray,
+                byteCount: Int,
+                pts: Long
+            ) {
+                try {
+                    val frame = DesktopMyPlayerDspPipeline.process(samples, byteCount)
+                    soundLine?.write(frame, 0, frame.size)
+                } catch (t: Throwable) {
+                    println("[DesktopAudioBackend] DSP play failed: ${t.message}")
+                }
+            }
+
+            override fun pause(mediaPlayer: MediaPlayer?, pts: Long) {
+                try { soundLine?.stop() } catch (_: Throwable) {}
+            }
+
+            override fun resume(mediaPlayer: MediaPlayer?, pts: Long) {
+                try { soundLine?.start() } catch (_: Throwable) {}
+            }
+
+            override fun flush(mediaPlayer: MediaPlayer?, pts: Long) {
+                try { soundLine?.flush() } catch (_: Throwable) {}
+            }
+
+            override fun drain(mediaPlayer: MediaPlayer?) {
+                try { soundLine?.drain() } catch (_: Throwable) {}
+            }
+
+            // amem hands the volume responsibility to us; the pipeline (MyPlayerVolumeSink
+            // semantics + player volume) applies it in the samples instead.
+            override fun setVolume(volume: Float, mute: Boolean) {}
+        }
+        player.audio().callback("S16N", CALLBACK_RATE, CALLBACK_CHANNELS, adapter)
+        DesktopMyPlayerDspPipeline.beginStream(CALLBACK_RATE, CALLBACK_CHANNELS)
+        // isCallbackMode gates the volume path & native equalizer; set only once everything is live.
+        DesktopMyPlayerDspPipeline.markCallbackMode()
+        println("[DesktopAudioBackend] DSP callback chain live (S16N ${CALLBACK_RATE}Hz x${CALLBACK_CHANNELS}).")
     }
 
     fun pause() {
@@ -176,6 +269,11 @@ object DesktopAudioBackend {
     }
 
     fun setVolume(volume: Float) {
+        if (DesktopMyPlayerDspPipeline.isCallbackMode) {
+            // Samples are scaled in the DSP chain (volume curve + ReplayGain); VLC's mixer is bypassed.
+            DesktopMyPlayerDspPipeline.setPlayerVolume(volume)
+            return
+        }
         if (isVlcAvailable && mediaPlayer != null) {
             try {
                 val vlcVolume = (volume * 100).toInt().coerceIn(0, 100)
@@ -221,6 +319,89 @@ object DesktopAudioBackend {
         onCompletionCallback = callback
     }
 
+    /**
+     * Desktop DSP bridge: mirrors MasterAudioDspProcessor state onto VLC's native equalizer.
+     *
+     * Idempotent (identical inputs are ignored), thread-safe (call from any coroutine) and
+     * never throws. The 15 ISO-band gains (25..16k Hz) are folded onto VLC's fixed 10-band
+     * table by nearest log-frequency overlap; per-bin averages of every ISO gain that lands
+     * nearer that bin. EQ preamp carries the loudness pre-gain. VLC volume (setVolume) and
+     * the equalizer preamp are independent chains and are deliberately not coupled here.
+     */
+    /** Playback speed (rate). VLC supports rate only — Audio Lab's pitch stays UI-only on desktop. */
+    fun setSpeed(speed: Float) {
+        currentRate = speed.coerceIn(0.25f, 4f)
+        if (isVlcAvailable && mediaPlayer != null) {
+            try {
+                mediaPlayer?.controls()?.setRate(currentRate)
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun setDspParams(eqEnabled: Boolean, eqBandGains: List<Float>?, loudnessPreampDb: Float) {
+        if (DesktopMyPlayerDspPipeline.isCallbackMode) return
+        if (isVlcAvailable && mediaPlayer == null) return
+        val signature = buildString {
+            append("eq=").append(eqEnabled)
+            append(";gains=").append(eqBandGains?.joinToString(",") { "%.3f".format(it) }.orEmpty())
+            append(";preamp=").append("%.3f".format(loudnessPreampDb))
+        }
+        synchronized(dspLock) {
+            if (signature == lastDspSignature) return
+            try {
+                if (!isVlcAvailable) {
+                    lastDspSignature = signature
+                    return
+                }
+                val target = mediaPlayer ?: return
+                if (!eqEnabled && loudnessPreampDb == 0f) {
+                    lastDspSignature = signature
+                    target.audio().setEqualizer(null) // disable the native equalizer entirely
+                    return
+                }
+                val equalizer = Equalizer(VLC_EQ_BAND_COUNT)
+                // vlcj/libvlc equalizer amplitudes are gain values in dB, constrained to [-20, +20]
+                // (vlcj Equalizer.checkAmp bounds = LibVlcConst.MIN_GAIN/MAX_GAIN).
+                equalizer.setPreamp(loudnessPreampDb.coerceIn(VLC_AMP_MIN_DB, VLC_AMP_MAX_DB))
+                val amps = foldIsoGainsToVlcBins(eqBandGains.takeIf { eqEnabled })
+                for (bin in 0 until VLC_EQ_BAND_COUNT) {
+                    equalizer.setAmp(bin, amps[bin].coerceIn(VLC_AMP_MIN_DB, VLC_AMP_MAX_DB))
+                }
+                target.audio().setEqualizer(equalizer)
+                lastDspSignature = signature
+            } catch (t: Throwable) {
+                println("[DesktopAudioBackend] setDspParams failed: ${t.message}")
+            }
+        }
+    }
+
+    /** Per-bin averages of every ISO-band gain whose center frequency is nearest to that VLC band. */
+    private fun foldIsoGainsToVlcBins(gainsDb: List<Float>?): FloatArray {
+        val bins = FloatArray(VLC_EQ_BAND_COUNT)
+        val counts = IntArray(VLC_EQ_BAND_COUNT)
+        val isoCenters = com.example.myplayer.playback.dsp.MasterAudioDspProcessor.BAND_FREQUENCIES
+        for (isoIndex in isoCenters.indices) {
+            val gain = gainsDb?.getOrNull(isoIndex)?.takeIf { it.isFinite() } ?: continue
+            val isoHz = isoCenters[isoIndex]
+            var bestBin = 0
+            var bestDistance = Double.MAX_VALUE
+            for (bin in 0 until VLC_EQ_BAND_COUNT) {
+                // Log-frequency distance: the band tables are log-spaced, so ratio distance is the "linear" metric here.
+                val distance = abs(ln(isoHz.toDouble()) - ln(VLC_BAND_CENTERS[bin].toDouble()))
+                if (distance < bestDistance) {
+                    bestDistance = distance
+                    bestBin = bin
+                }
+            }
+            bins[bestBin] += gain
+            counts[bestBin]++
+        }
+        for (bin in bins.indices) {
+            if (counts[bin] > 0) bins[bin] /= counts[bin]
+        }
+        return bins
+    }
+
     fun setOnPlayingChanged(callback: (Boolean) -> Unit) {
         onPlayingChangedCallback = callback
     }
@@ -229,8 +410,10 @@ object DesktopAudioBackend {
         try {
             val player = mediaPlayer
             val factory = mediaPlayerFactory
+            val line = soundLine
             mediaPlayer = null
             mediaPlayerFactory = null
+            soundLine = null
             backendScope.launch(Dispatchers.IO) {
                 try {
                     player?.controls()?.stop()
@@ -238,6 +421,10 @@ object DesktopAudioBackend {
                 } catch (_: Throwable) {}
                 try {
                     factory?.release()
+                } catch (_: Throwable) {}
+                try {
+                    line?.stop()
+                    line?.close()
                 } catch (_: Throwable) {}
             }
         } catch (_: Throwable) {}

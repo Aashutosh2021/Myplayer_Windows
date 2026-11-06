@@ -63,6 +63,11 @@ class MediaController : Player {
         }
 
     override var playbackParameters: PlaybackParameters = PlaybackParameters()
+        set(value) {
+            // shortcut: VLC supports rate only — pitch is stored but not audible on desktop.
+            field = value
+            com.example.myplayer.playback.DesktopAudioBackend.setSpeed(value.speed)
+        }
 
     init {
         com.example.myplayer.playback.DesktopAudioBackend.setOnCompletion {

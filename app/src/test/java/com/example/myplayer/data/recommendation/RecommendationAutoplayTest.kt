@@ -251,13 +251,19 @@ class RecommendationAutoplayTest {
             }
         }
 
+        // Ensure collector job is subscribed before emitting events
+        kotlinx.coroutines.delay(50)
+
         // Simulate each song completing in sequence
         for (i in 1..10) {
             playbackEventBus.emit(PlaybackEvent.SongCompleted("rec_song_$i"))
             kotlinx.coroutines.delay(100)
         }
 
-        kotlinx.coroutines.delay(300)
+        val startWait = System.currentTimeMillis()
+        while (playedSongIds.size < 10 && System.currentTimeMillis() - startWait < 2000) {
+            kotlinx.coroutines.delay(50)
+        }
         job.cancel()
 
         assertEquals("All 10 songs should have been emitted for continuous autoplay", 10, playedSongIds.size)

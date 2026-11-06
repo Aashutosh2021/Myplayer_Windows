@@ -31,7 +31,13 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.myplayer.ui.components.FloatingNavBar
+import com.example.myplayer.ui.components.WhatsNewDialog
+import com.example.myplayer.ui.components.WhatsNewRepository
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.example.myplayer.ui.myplayer.*
 import com.example.myplayer.ui.navigation.Screen
+import com.example.myplayer.ui.screens.home.HomeViewModel
 import com.example.myplayer.ui.screens.downloads.DownloadsScreen
 import com.example.myplayer.ui.screens.home.HomeScreen
 import com.example.myplayer.ui.screens.library.LibraryScreen
@@ -41,8 +47,16 @@ import com.example.myplayer.ui.screens.search.SearchScreen
 import com.example.myplayer.ui.screens.settings.SettingsScreen
 import com.example.myplayer.ui.theme.CloudBlueBackground
 
+// Screen.AudioPlayback now exists in ui\navigation\Screen.kt; the literal fallback is gone.
 @Composable
 fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
+    val homeViewModel: HomeViewModel = hiltViewModel()
+    val myplayerState = rememberMyPlayerUiStateHolder()
+    // Audio Lab -> real DSP for the whole UI lifetime (restores saved settings at app start).
+    MyPlayerAudioLabEngineSync(myplayerState)
+    var showStylePicker by remember { mutableStateOf(false) }
+    var showWhatsNew by remember { mutableStateOf(false) }
+
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
@@ -81,8 +95,71 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
     val isOnNowPlaying = currentRoute == Screen.NowPlaying.route
 
     // Routes where the nav bar should be hidden
-    val hideNavRoutes = setOf(Screen.NowPlaying.route, Screen.DualBud.route, Screen.SyncPlay.route, "playlist_detail/{playlistId}")
+    val hideNavRoutes = setOf(Screen.NowPlaying.route, Screen.DualBud.route, Screen.SyncPlay.route, Screen.AudioPlayback.route, Screen.MyPlayerAudioLab.route, Screen.MyPlayerEqualizer.route, Screen.MyPlayerAppearance.route, Screen.RemoteNotifications.route, "playlist_detail/{playlistId}")
     val showNav = currentRoute != null && !hideNavRoutes.any { currentRoute.startsWith(it.split("{")[0]) }
+
+    // Onboarding runs as a full-window gate before any nav surface is shown.
+    if (!myplayerState.onboardingDone) {
+        MyPlayerOnboardingFlow(
+            myplayerState = myplayerState,
+            spotifyManager = homeViewModel.spotifyManager,
+            onComplete = { username, selectedArtists ->
+                myplayerState.completeOnboarding(username, selectedArtists)
+                homeViewModel.setUserName(username)
+                homeViewModel.saveUserTastePreferences(
+                    setOf("Hindi", "Punjabi"),
+                    setOf("Bollywood", "Pop"),
+                    selectedArtists
+                )
+                // What's New greets the user right after onboarding, never during it.
+                if (WhatsNewRepository.shouldShow(context)) showWhatsNew = true
+            }
+        )
+        return
+    }
+
+    if (showWhatsNew) {
+        WhatsNewDialog(
+            onDismiss = {
+                showWhatsNew = false
+                WhatsNewRepository.markSeen(context)
+            }
+        )
+    }
+
+    if (showStylePicker) {
+        Dialog(
+            onDismissRequest = { showStylePicker = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            MyPlayerPlayerStylesPickerScreen(
+                myplayerState = myplayerState,
+                previewTitle = displayTitle ?: "Khat",
+                previewArtist = displayArtist ?: "Navjot Ahuja",
+                previewArtUri = displayArt,
+                onBack = { showStylePicker = false }
+            )
+        }
+    }
+
+    // Remote push notification handling & deep redirect to settings
+    LaunchedEffect(MyPlayerRemoteNotificationManager.pendingNavigateToSettings) {
+        if (MyPlayerRemoteNotificationManager.pendingNavigateToSettings) {
+            MyPlayerRemoteNotificationManager.pendingNavigateToSettings = false
+            navController.navigate(Screen.Settings.route) { launchSingleTop = true }
+        }
+    }
+
+    MyPlayerRemoteNotificationManager.activeRemotePopup?.let { remoteNotif ->
+        MyPlayerRemoteNotificationPopupDialog(
+            notification = remoteNotif,
+            onDismiss = { MyPlayerRemoteNotificationManager.dismissActivePopup() },
+            onNavigateToSettings = {
+                MyPlayerRemoteNotificationManager.dismissActivePopup()
+                navController.navigate(Screen.Settings.route) { launchSingleTop = true }
+            }
+        )
+    }
 
     Row(modifier = Modifier.fillMaxSize()) {
         if (showNav) {
@@ -249,6 +326,10 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
                     onNavigateToSettings = {
                         navController.navigate(Screen.Settings.route)
                     },
+                    myplayerState = myplayerState,
+                    onOpenCustomizeStyles = { showStylePicker = true },
+                    onOpenAudioLab = { navController.navigate(Screen.MyPlayerAudioLab.route) { launchSingleTop = true } },
+                    onOpenAppearance = { navController.navigate(Screen.MyPlayerAppearance.route) { launchSingleTop = true } },
                     bottomPadding = 16.dp
                 )
             }
@@ -327,8 +408,7 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
                     repeatMode = repeatMode,
                     onCycleRepeatMode = { viewModel.cycleRepeatMode() },
                     onNavigateToSettings = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } },
-                    sideTracks = sideTracks,
-                    sideTrackTitle = sideTrackTitle,
+                    sideTracks = sideTracks,                    sideTrackTitle = sideTrackTitle,
                     playbackContext = playbackContext,
                     onSideTrackClick = { viewModel.playSideTrack(it) },
                     onContextChange = { viewModel.setSideTrackContext(it) },
@@ -337,7 +417,8 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
                     onAddTrackToPlaylist = { playlistId, track -> viewModel.addSongToPlaylist(playlistId, track) },
                     onCreatePlaylistAndAdd = { viewModel.createPlaylistAndAdd(it) },
                     playerVolume = playerVolume,
-                    onVolumeChange = { viewModel.setPlayerVolume(it) }
+                    onVolumeChange = { viewModel.setPlayerVolume(it) },
+                    onOpenCustomizeStyles = { showStylePicker = true }
                 )
             }
             composable(Screen.Settings.route) {
@@ -353,7 +434,40 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
                     },
                     onNavigateToDualBud = { navController.navigate(Screen.DualBud.route) { launchSingleTop = true } },
                     onNavigateToSyncPlay = { navController.navigate(Screen.SyncPlay.route) { launchSingleTop = true } },
+                    onNavigateToAudioPlayback = { navController.navigate(Screen.AudioPlayback.route) { launchSingleTop = true } },
+                    myplayerState = myplayerState,
+                    onNavigateToPlayerStyles = { showStylePicker = true },
+                    onNavigateToMyPlayerAppearance = { navController.navigate(Screen.MyPlayerAppearance.route) { launchSingleTop = true } },
+                    onNavigateToMyPlayerAudioLab = { navController.navigate(Screen.MyPlayerAudioLab.route) { launchSingleTop = true } },
+                    onNavigateToRemoteNotifications = { navController.navigate(Screen.RemoteNotifications.route) { launchSingleTop = true } },
                     bottomPadding = 16.dp
+                )
+            }
+            composable(Screen.MyPlayerAudioLab.route) {
+                MyPlayerAudioLabHubScreen(
+                    myplayerState = myplayerState,
+                    onOpenEqualizer = { navController.navigate(Screen.MyPlayerEqualizer.route) { launchSingleTop = true } },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(Screen.MyPlayerEqualizer.route) {
+                MyPlayerEqualizerScreen(
+                    myplayerState = myplayerState,
+                    onApplyGainsToEngine = { enabled, gains, preamp -> MyPlayerAudioFxDspBridge.setEq(enabled, gains, preamp) },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(Screen.MyPlayerAppearance.route) {
+                MyPlayerAppearanceSettingsScreen(
+                    myplayerState = myplayerState,
+                    onOpenStylesPicker = { showStylePicker = true },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(Screen.RemoteNotifications.route) {
+                MyPlayerRemoteNotificationsCenterScreen(
+                    myplayerState = myplayerState,
+                    onBack = { navController.popBackStack() }
                 )
             }
             composable(Screen.DualBud.route) {
@@ -365,6 +479,14 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
                 com.example.myplayer.sync.ui.SyncPlayScreen(
                     onBack = { navController.popBackStack() },
                     onNavigateToNowPlaying = { navController.navigate(Screen.NowPlaying.route) { launchSingleTop = true } }
+                )
+            }
+            composable(Screen.AudioPlayback.route) {
+                val settingsVm: com.example.myplayer.ui.screens.settings.SettingsViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+                com.example.myplayer.ui.settings.AudioAndPlaybackScreen(
+                    store = settingsVm.audioPlaybackStore,
+                    featureManagers = settingsVm.audioFeatureManagers,
+                    onBack = { navController.popBackStack() }
                 )
             }
         }

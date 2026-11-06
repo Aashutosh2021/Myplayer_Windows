@@ -1,6 +1,11 @@
 package com.example.myplayer
 
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Density
@@ -9,6 +14,8 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.example.myplayer.di.AppContainer
+import com.example.myplayer.ui.components.WhatsNewDialog
+import com.example.myplayer.ui.components.WhatsNewRepository
 import com.example.myplayer.ui.screens.main.MainScreen
 import com.example.myplayer.ui.theme.MyPlayerTheme
 
@@ -39,6 +46,19 @@ fun main() {
             ) {
                 MyPlayerTheme {
                     MainScreen()
+
+                    // Startup "What's New" changelog (ported from Android MainActivity.onCreate):
+                    // shows once per app version, then marks itself seen via SharedPreferences.
+                    val context = LocalContext.current
+                    var showWhatsNew by remember { mutableStateOf(WhatsNewRepository.shouldShow(context)) }
+                    if (showWhatsNew) {
+                        WhatsNewDialog(
+                            onDismiss = {
+                                showWhatsNew = false
+                                WhatsNewRepository.markSeen(context)
+                            }
+                        )
+                    }
                 }
             }
         }

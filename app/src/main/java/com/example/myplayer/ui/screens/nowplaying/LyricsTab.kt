@@ -7,10 +7,13 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
@@ -30,6 +33,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.myplayer.data.lyrics.LyricsScript
 import com.example.myplayer.ui.theme.*
 import kotlinx.coroutines.launch
 
@@ -50,10 +56,18 @@ fun LyricsTab(
     onRetryLyrics: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val isDark = ThemeState.isDarkMode
+    val textColor = if (isDark) Color.White else CharcoalPrimary
+    val textMuted = if (isDark) Color.White.copy(alpha = 0.7f) else SlateSecondary
+    val iconBg = if (isDark) Color.White.copy(alpha = 0.08f) else CharcoalPrimary.copy(alpha = 0.06f)
+    val iconTint = if (isDark) Color.White.copy(alpha = 0.6f) else CharcoalPrimary.copy(alpha = 0.6f)
+    val btnBg = if (isDark) Color.White.copy(alpha = 0.15f) else CharcoalPrimary
+    val btnText = if (isDark) Color.White else PureWhite
+
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(CloudBlueBackground),
+            .background(Color.Transparent),
         contentAlignment = Alignment.TopCenter
     ) {
         when (lyricsState) {
@@ -65,20 +79,21 @@ fun LyricsTab(
                     verticalArrangement = Arrangement.Center
                 ) {
                     if (lyricsState is LyricsUiState.Loading) {
-                        CircularProgressIndicator(color = ClayPrimary, modifier = Modifier.size(40.dp))
+                        CircularProgressIndicator(color = textColor, modifier = Modifier.size(36.dp))
                         Spacer(Modifier.height(16.dp))
-                        Text("Fetching lyrics...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Fetching lyrics...", style = MaterialTheme.typography.bodyMedium, color = textMuted)
                     } else {
                         Box(
                             modifier = Modifier
-                                .size(80.dp)
-                                .clayConcave(borderRadius = 40.dp, backgroundColor = MaterialTheme.colorScheme.surface),
+                                .size(64.dp)
+                                .clip(CircleShape)
+                                .background(iconBg),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Filled.MusicNote, null, tint = TextMuted, modifier = Modifier.size(36.dp))
+                            Icon(Icons.Filled.MusicNote, null, tint = iconTint, modifier = Modifier.size(32.dp))
                         }
                         Spacer(Modifier.height(16.dp))
-                        Text("Play a song to see lyrics", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Play a song to see lyrics", style = MaterialTheme.typography.bodyMedium, color = textMuted)
                     }
                 }
             }
@@ -93,20 +108,22 @@ fun LyricsTab(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(72.dp)
-                            .clayConcave(borderRadius = 36.dp, backgroundColor = MaterialTheme.colorScheme.surface),
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(iconBg),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Filled.MusicNote, null, tint = TextMuted, modifier = Modifier.size(32.dp))
+                        Icon(Icons.Filled.MusicNote, null, tint = iconTint, modifier = Modifier.size(32.dp))
                     }
                     Spacer(Modifier.height(14.dp))
-                    Text("No lyrics found", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                    Text("No lyrics found", style = MaterialTheme.typography.titleMedium, color = textColor)
                     Spacer(Modifier.height(6.dp))
                     Text(
                         "Lyrics not available online for this song",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = textMuted
                     )
+                    Spacer(Modifier.height(16.dp))
                     // Retry + Add Custom Lyrics Buttons Row
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -115,8 +132,8 @@ fun LyricsTab(
                         Button(
                             onClick = onRetryLyrics,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.surface
+                                containerColor = btnBg,
+                                contentColor = btnText
                             ),
                             shape = RoundedCornerShape(14.dp),
                             contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp)
@@ -131,16 +148,16 @@ fun LyricsTab(
                                 "Retry",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = btnText
                             )
                         }
 
                         OutlinedButton(
                             onClick = onAddCustomLyrics,
                             colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.primary
+                                contentColor = textColor
                             ),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, textColor.copy(alpha = 0.3f)),
                             shape = RoundedCornerShape(14.dp),
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
                         ) {
@@ -153,7 +170,8 @@ fun LyricsTab(
                             Text(
                                 "Add Custom",
                                 style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                color = textColor
                             )
                         }
                     }
@@ -171,6 +189,8 @@ fun LyricsTab(
                     PlainLyricsView(text = lyricsState.result.plainLyrics ?: "")
                 }
 
+                LyricsScriptPicker(modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp, top = 8.dp, end = 48.dp))
+
                 IconButton(
                     onClick = onAddCustomLyrics,
                     modifier = Modifier
@@ -181,7 +201,7 @@ fun LyricsTab(
                     Icon(
                         Icons.Filled.Edit,
                         contentDescription = "Edit Lyrics",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        tint = textMuted,
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -196,8 +216,11 @@ private fun SyncedLyricsView(
     positionMs: State<Long>,
     onSeek: (Long) -> Unit
 ) {
+    val isDark = ThemeState.isDarkMode
+    val baseColor = if (isDark) Color.White else CharcoalPrimary
+
     // Read positionMs.value INSIDE derivedStateOf so Compose tracks it as a
-    // dependency and re-derives on every tick — but only notifies readers when
+    // dependency and re-derives on every tick â€” but only notifies readers when
     // the active *line index* actually changes.
     val activeIndexState = remember(lines) {
         derivedStateOf {
@@ -243,9 +266,9 @@ private fun SyncedLyricsView(
             )
             val color by animateColorAsState(
                 targetValue = when {
-                    isActive -> ClayPrimary
-                    isPast -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                    isActive -> baseColor
+                    isPast -> baseColor.copy(alpha = 0.55f)
+                    else -> baseColor.copy(alpha = 0.35f)
                 },
                 animationSpec = tween(300),
                 label = "lyricColor"
@@ -260,7 +283,7 @@ private fun SyncedLyricsView(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = lyricLine.ifBlank { "•" },
+                    text = lyricLine.ifBlank { "â€¢" },
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.Normal,
                         fontSize = 16.sp,
@@ -280,6 +303,9 @@ private fun SyncedLyricsView(
 
 @Composable
 private fun PlainLyricsView(text: String) {
+    val isDark = ThemeState.isDarkMode
+    val textColor = if (isDark) Color.White else CharcoalPrimary
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 32.dp),
@@ -289,8 +315,8 @@ private fun PlainLyricsView(text: String) {
         items(linesOfText.size, key = { "plain_$it" }) { i ->
             Text(
                 text = linesOfText[i],
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 16.sp, lineHeight = 26.sp),
+                color = textColor,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -298,4 +324,38 @@ private fun PlainLyricsView(text: String) {
     }
 }
 
+
+
+/** Original / Hinglish / à¤¹à¤¿à¤¨à¥à¤¦à¥€ / Ø§Ø±Ø¯Ùˆ chips; hidden for English lyrics. */
+@Composable
+private fun LyricsScriptPicker(modifier: Modifier = Modifier, viewModel: LyricsViewModel = hiltViewModel()) {
+    val detected by viewModel.detectedScript.collectAsStateWithLifecycle()
+    if (!detected.convertible) return
+    val mode by viewModel.scriptMode.collectAsStateWithLifecycle()
+    val converting by viewModel.converting.collectAsStateWithLifecycle()
+    val isDark = ThemeState.isDarkMode
+    val fg = if (isDark) Color.White else CharcoalPrimary
+
+    Row(
+        modifier = modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        LyricsScript.values().forEach { option ->
+            val selected = option == mode
+            Text(
+                text = option.label,
+                fontSize = 12.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                color = if (selected) (if (isDark) CharcoalPrimary else PureWhite) else fg.copy(alpha = 0.75f),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(if (selected) fg else fg.copy(alpha = 0.10f))
+                    .clickable { viewModel.setScriptMode(option) }
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            )
+        }
+        if (converting) CircularProgressIndicator(color = fg, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+    }
+}
 

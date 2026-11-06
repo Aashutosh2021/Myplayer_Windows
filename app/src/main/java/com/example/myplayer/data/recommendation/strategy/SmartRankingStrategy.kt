@@ -52,6 +52,12 @@ class SmartRankingStrategy @Inject constructor() : RecommendationStrategy {
         seed: RecommendationSeed,
         candidates: List<RecommendationSong>
     ): List<RecommendationSong> {
+        // Region / Mood / Genre continuity analysis.
+        // This is what keeps a Bollywood happy mix from handing autoplay over to
+        // global charts: text-derived tags drive language (+18/-20), mood (+12/-6)
+        // and genre (+8) alignment scoring. Neutral when either side has no tags.
+        val seedContext = SongContextClassifier.analyze(seed.title, seed.artist, seed.album)
+
         val scoredList = candidates.map { candidate ->
             var score = 0
             val reasons = mutableListOf<String>()
@@ -77,6 +83,44 @@ class SmartRankingStrategy @Inject constructor() : RecommendationStrategy {
                         reasons.add("Genre Neighbor ($candidateGenre)")
                     }
                 }
+            }
+
+            // 2b. Region / Mood / Genre continuity (autoplay stays in the same vibe)
+            val candidateContext = SongContextClassifier.analyze(candidate.title, candidate.artist, candidate.album)
+            if (seedContext.language.isNotEmpty() && candidateContext.language.isNotEmpty()) {
+                val languageOverlap = seedContext.language.intersect(candidateContext.language)
+                if (languageOverlap.isNotEmpty()) {
+                    score += 18
+                    reasons.add("Language Match")
+                } else {
+                    // Bollywood seed + Hollywood candidate (or vice versa): effectively banned
+                    // (also removed by the gate below whenever enough on-vibe songs exist).
+                    score -= 80
+                    reasons.add("Language Shift")
+                }
+            }
+
+            if (seedContext.mood.isNotEmpty() && candidateContext.mood.isNotEmpty()) {
+                if (seedContext.mood.intersect(candidateContext.mood).isNotEmpty()) {
+                    score += 12
+                    reasons.add("Mood Match")
+                } else {
+                    // Happy seed me sad/actor track bahut neeche.
+                    score -= 6
+                    reasons.add("Mood Shift")
+                }
+                if (SongContextClassifier.moodOpposes(seedContext.mood, candidateContext.mood)) {
+                    // Clearly opposite energy (upbeat <-> sad/slow): push far down.
+                    score -= 25
+                    reasons.add("Mood Opposite")
+                }
+            }
+
+            if (seedContext.genre.isNotEmpty() && candidateContext.genre.isNotEmpty() &&
+                seedContext.genre.intersect(candidateContext.genre).isNotEmpty()
+            ) {
+                score += 8
+                reasons.add("Similar Genre")
             }
 
             // 3. Source Consensus & Affinity Signals
@@ -114,8 +158,14 @@ class SmartRankingStrategy @Inject constructor() : RecommendationStrategy {
             )
         }.sortedByDescending { it.recommendationScore }
 
+        // Continuity gate: a clear language shift (Bollywood -> Hollywood) is removed outright
+        // while at least 5 on-vibe candidates remain; otherwise keep it (ranked last) so the
+        // queue never runs dry.
+        val onVibe = scoredList.filterNot { it.reason.contains("Language Shift") }
+        val pool = if (onVibe.size >= 5) onVibe else scoredList
+
         // 5. Diversity Interleaving: Enforce Artist and Album Caps
-        return applyDiversityCaps(scoredList)
+        return applyDiversityCaps(pool)
     }
 
     /**

@@ -25,7 +25,7 @@ object DesktopAudioBackend {
 
     /**
      * Desktop DSP warm path: VLC's callback aout (amem) pushes S16N PCM into
-     * DesktopMyPlayerDspPipeline (master EQ -> Audio Lab spatial/reverb/loudness -> volume stage)
+     * DesktopMyPlayerDspPipeline (master EQ -> 3D Spatial / Atmos -> Audio Lab spatial/reverb/loudness -> volume stage)
      * and the output is written to a Java Sound line. When this fails the player silently falls
      * back to VLC's native output (which only carries the native equalizer).
      */
@@ -36,7 +36,6 @@ object DesktopAudioBackend {
 
     private val backendScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    // shortcut: 15-band UI folds onto VLC 10-band bins; clarity/spatial/skip-silence are not representable in the VLC native equalizer.
     // VLC's native band table (fixed frequencies, Hz): 60, 170, 310, 600, 1k, 3k, 6k, 12k, 14k, 16k.
     private val VLC_BAND_CENTERS = floatArrayOf(60f, 170f, 310f, 600f, 1000f, 3000f, 6000f, 12000f, 14000f, 16000f)
     private const val VLC_EQ_BAND_COUNT = 10
@@ -62,7 +61,7 @@ object DesktopAudioBackend {
                 System.setProperty("jna.library.path", vlcDir.absolutePath)
             }
             NativeDiscovery().discover()
-            val factory = MediaPlayerFactory("--no-video", "--quiet")
+            val factory = MediaPlayerFactory("--no-video", "--quiet", "--network-caching=1500")
             mediaPlayerFactory = factory
             val player = factory.mediaPlayers().newMediaPlayer()
             player.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
@@ -105,7 +104,7 @@ object DesktopAudioBackend {
             isVlcAvailable = true
             println("[DesktopAudioBackend] VLC Media Engine initialized successfully.")
             try {
-                // Mobile DSP chain (Audio Lab / Master EQ) needs raw PCM; switch VLC to its
+                // Mobile DSP chain (Audio Lab / Master EQ / 3D Spatial) needs raw PCM; switch VLC to its
                 // callback output and drive a Java Sound line through the Kotlin DSP processors.
                 enableCallbackAudio()
             } catch (t: Throwable) {
@@ -118,11 +117,14 @@ object DesktopAudioBackend {
     }
 
     fun play(pathOrUri: String, startPositionMs: Long = 0L) {
-        val cleanPath = when {
+        val rawCleanPath = when {
             pathOrUri.startsWith("file://") -> pathOrUri.removePrefix("file://")
             pathOrUri.startsWith("file:/") -> pathOrUri.removePrefix("file:")
             else -> pathOrUri
         }
+        // Route online HTTP/HTTPS streams through our Spotify-style 9-Second Chunk Proxy
+        val cleanPath = DesktopChunkStreamProxy.wrapUrlIfNeeded(rawCleanPath)
+
         if (cleanPath == currentPath && isPaused && startPositionMs <= 0L) {
             resume()
             return
@@ -194,13 +196,10 @@ object DesktopAudioBackend {
                 try { soundLine?.drain() } catch (_: Throwable) {}
             }
 
-            // amem hands the volume responsibility to us; the pipeline (MyPlayerVolumeSink
-            // semantics + player volume) applies it in the samples instead.
             override fun setVolume(volume: Float, mute: Boolean) {}
         }
         player.audio().callback("S16N", CALLBACK_RATE, CALLBACK_CHANNELS, adapter)
         DesktopMyPlayerDspPipeline.beginStream(CALLBACK_RATE, CALLBACK_CHANNELS)
-        // isCallbackMode gates the volume path & native equalizer; set only once everything is live.
         DesktopMyPlayerDspPipeline.markCallbackMode()
         println("[DesktopAudioBackend] DSP callback chain live (S16N ${CALLBACK_RATE}Hz x${CALLBACK_CHANNELS}).")
     }
@@ -270,7 +269,6 @@ object DesktopAudioBackend {
 
     fun setVolume(volume: Float) {
         if (DesktopMyPlayerDspPipeline.isCallbackMode) {
-            // Samples are scaled in the DSP chain (volume curve + ReplayGain); VLC's mixer is bypassed.
             DesktopMyPlayerDspPipeline.setPlayerVolume(volume)
             return
         }
@@ -303,7 +301,7 @@ object DesktopAudioBackend {
                 if (length > 0L) return length
             } catch (_: Exception) {}
         }
-        return 180_000L // 3 minutes default duration if unknown
+        return 180_000L
     }
 
     fun isPlaying(): Boolean {
@@ -319,16 +317,6 @@ object DesktopAudioBackend {
         onCompletionCallback = callback
     }
 
-    /**
-     * Desktop DSP bridge: mirrors MasterAudioDspProcessor state onto VLC's native equalizer.
-     *
-     * Idempotent (identical inputs are ignored), thread-safe (call from any coroutine) and
-     * never throws. The 15 ISO-band gains (25..16k Hz) are folded onto VLC's fixed 10-band
-     * table by nearest log-frequency overlap; per-bin averages of every ISO gain that lands
-     * nearer that bin. EQ preamp carries the loudness pre-gain. VLC volume (setVolume) and
-     * the equalizer preamp are independent chains and are deliberately not coupled here.
-     */
-    /** Playback speed (rate). VLC supports rate only — Audio Lab's pitch stays UI-only on desktop. */
     fun setSpeed(speed: Float) {
         currentRate = speed.coerceIn(0.25f, 4f)
         if (isVlcAvailable && mediaPlayer != null) {
@@ -356,12 +344,10 @@ object DesktopAudioBackend {
                 val target = mediaPlayer ?: return
                 if (!eqEnabled && loudnessPreampDb == 0f) {
                     lastDspSignature = signature
-                    target.audio().setEqualizer(null) // disable the native equalizer entirely
+                    target.audio().setEqualizer(null)
                     return
                 }
                 val equalizer = Equalizer(VLC_EQ_BAND_COUNT)
-                // vlcj/libvlc equalizer amplitudes are gain values in dB, constrained to [-20, +20]
-                // (vlcj Equalizer.checkAmp bounds = LibVlcConst.MIN_GAIN/MAX_GAIN).
                 equalizer.setPreamp(loudnessPreampDb.coerceIn(VLC_AMP_MIN_DB, VLC_AMP_MAX_DB))
                 val amps = foldIsoGainsToVlcBins(eqBandGains.takeIf { eqEnabled })
                 for (bin in 0 until VLC_EQ_BAND_COUNT) {
@@ -375,7 +361,6 @@ object DesktopAudioBackend {
         }
     }
 
-    /** Per-bin averages of every ISO-band gain whose center frequency is nearest to that VLC band. */
     private fun foldIsoGainsToVlcBins(gainsDb: List<Float>?): FloatArray {
         val bins = FloatArray(VLC_EQ_BAND_COUNT)
         val counts = IntArray(VLC_EQ_BAND_COUNT)
@@ -386,7 +371,6 @@ object DesktopAudioBackend {
             var bestBin = 0
             var bestDistance = Double.MAX_VALUE
             for (bin in 0 until VLC_EQ_BAND_COUNT) {
-                // Log-frequency distance: the band tables are log-spaced, so ratio distance is the "linear" metric here.
                 val distance = abs(ln(isoHz.toDouble()) - ln(VLC_BAND_CENTERS[bin].toDouble()))
                 if (distance < bestDistance) {
                     bestDistance = distance

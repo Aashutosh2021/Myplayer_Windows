@@ -303,7 +303,8 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
                     onNavigateToNowPlaying = {
                         navController.navigate(Screen.NowPlaying.route) { launchSingleTop = true }
                     },
-                    bottomPadding = 16.dp
+                    bottomPadding = 16.dp,
+                    viewModel = homeViewModel
                 )
             }
             composable(Screen.Downloads.route) {
@@ -381,6 +382,7 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
                 val playerVolume by viewModel.playerVolume.collectAsStateWithLifecycle()
 
                 NowPlayingScreen(
+                    myplayerState = myplayerState,
                     canDownload = canDownload,
                     isDownloaded = isDownloaded,
                     isDownloading = isDownloading,
@@ -486,7 +488,8 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
                 com.example.myplayer.ui.settings.AudioAndPlaybackScreen(
                     store = settingsVm.audioPlaybackStore,
                     featureManagers = settingsVm.audioFeatureManagers,
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    myplayerState = myplayerState
                 )
             }
         }

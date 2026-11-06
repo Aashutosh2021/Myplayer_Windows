@@ -8,27 +8,22 @@ import com.example.myplayer.myplayerfx.audio.ReplayGainTags
 import com.example.myplayer.myplayerfx.audio.SpatialAudioProcessor
 import com.example.myplayer.myplayerfx.audio.ReverbAudioProcessor
 import com.example.myplayer.playback.dsp.MasterAudioDspProcessor
+import com.example.myplayer.playback.dsp.SpatialAudioProcessor as SurroundSpatialAudioProcessor
 import com.example.myplayer.ui.myplayer.MyPlayerAudioFxDspBridge
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.min
 
 /**
- * Desktop replacement for Android's ExoPlayer `DefaultAudioSink` DSP chain (di/PlayerModule.kt).
+ * Desktop replacement for Android's ExoPlayer `DefaultAudioSink` DSP chain (`di/PlayerModule.kt`).
  *
- * Android builds its player with an audio sink whose processors are
- * [masterAudioDspProcessor, *myplayerFx] wrapped in MyPlayerVolumeSink. The desktop app plays
- * through VLC, so the same chain runs here over libvlc's callback audio output (amem): VLC hands
- * raw S16N PCM to [process] on its decoder thread, the processors run in the Android order
- * (master EQ/limiter -> Audio Lab spatial -> reverb -> loudness) and the MyPlayerVolumeSink volume
- * stage (exponential curve + ReplayGain) scales the samples before they reach Java Sound.
- *
- * Without this object every Audio Lab slider (reverb, spatial, loudness, "even out songs")
- * would change state but never the audible signal.
- *
- * shortcut: Android also runs playback\dsp\SpatialAudioProcessor (surround streams) in this chain;
- * it is not ported to desktop yet. Volume ramps/limiting beyond MyPlayerVolumeSink semantics and
- * ReplayGain tags (update(comments)) stay unimplemented — no tag parsing on the desktop decode path.
+ * Runs the full Android DSP pipeline over libvlc's callback audio output (`amem`):
+ * 1. [MasterAudioDspProcessor] (15-Band ISO Parametric EQ, Studio Master Clarity, Sub-Bass, Soft-Clip Limiter)
+ * 2. [SurroundSpatialAudioProcessor] (Dolby Atmos 5.1/7.1 Binaural Virtualizer, Brown & Duda 3D Virtual Speakers, BS2B Crossfeed)
+ * 3. [SpatialAudioProcessor] (Audio Lab 3D Soundstage)
+ * 4. [ReverbAudioProcessor] (Audio Lab Freeverb Room Reverb)
+ * 5. [LoudnessAudioProcessor] (Audio Lab Loudness Boost)
+ * 6. Exponential Volume Curve + ReplayGain normalization stage
  */
 object DesktopMyPlayerDspPipeline {
 
@@ -37,7 +32,7 @@ object DesktopMyPlayerDspPipeline {
     var isCallbackMode: Boolean = false
         private set
 
-    /** Flips the volume/ equalizer paths once the callback output is fully wired. */
+    /** Flips the volume/equalizer paths once the callback output is fully wired. */
     @Synchronized
     fun markCallbackMode() {
         isCallbackMode = true
@@ -60,22 +55,24 @@ object DesktopMyPlayerDspPipeline {
         install(
             AppContainer.resolveDependency(AudioFxService::class.java) as? AudioFxService,
             AppContainer.resolveDependency(MasterAudioDspProcessor::class.java) as? MasterAudioDspProcessor,
+            AppContainer.resolveDependency(SurroundSpatialAudioProcessor::class.java) as? SurroundSpatialAudioProcessor
         )
     }
 
     /** install() overload so the DSP chain can also run outside AppContainer (smoke tests). */
     @Synchronized
-    fun install(audioFx: AudioFxService?, master: MasterAudioDspProcessor?) {
+    fun install(
+        audioFx: AudioFxService?,
+        master: MasterAudioDspProcessor?,
+        surroundSpatial: SurroundSpatialAudioProcessor? = null
+    ) {
         if (installed) return
         installed = true
         try {
             fx = audioFx
-            chain = buildChain(audioFx, master)
-            println("[DesktopMyPlayerDspPipeline] installed ${chain.size} DSP stage(s); audioFx=${audioFx != null}, master=${master != null}")
+            chain = buildChain(audioFx, master, surroundSpatial)
+            println("[DesktopMyPlayerDspPipeline] installed ${chain.size} DSP stage(s); audioFx=${audioFx != null}, master=${master != null}, spatial=${surroundSpatial != null}")
             if (audioFx != null) {
-                // The state holder pushes Audio Lab params into this service live, so the
-                // processors reading it per buffer act on the current UI values. Runs after
-                // the chain exists so a UI-store hiccup can't leave the chain empty.
                 MyPlayerAudioFxDspBridge.attach(audioFx)
             }
         } catch (t: Throwable) {
@@ -87,8 +84,10 @@ object DesktopMyPlayerDspPipeline {
     private fun buildChain(
         audioFx: AudioFxService?,
         master: MasterAudioDspProcessor?,
+        surroundSpatial: SurroundSpatialAudioProcessor?
     ): List<AudioProcessor> = buildList {
         if (master != null) add(master)
+        if (surroundSpatial != null) add(surroundSpatial)
         val fx = audioFx ?: return@buildList
         add(SpatialAudioProcessor(fx))
         add(ReverbAudioProcessor(fx))
@@ -103,7 +102,6 @@ object DesktopMyPlayerDspPipeline {
         val format = AudioProcessor.AudioFormat(sampleRate, channels, C.ENCODING_PCM_16BIT)
         for (processor in chain) {
             if (formatChanged || !configApplied || !processor.isActive()) {
-                // Re-configure even the currently-active ones: flush() carries the pending format.
                 processor.flush()
                 processor.configure(format)
                 processor.flush()
@@ -151,8 +149,6 @@ object DesktopMyPlayerDspPipeline {
         if (remaining <= 0) return input
         val out = ByteArray(remaining)
         buffer.get(out)
-        // MyPlayerVolumeSink stage: the curve shapes the player's requested volume and ReplayGain
-        // levels loud tracks down ("even out songs").
         if (volumeGain != 1f) applyGain(out, volumeGain)
         return out
     }
@@ -166,11 +162,6 @@ object DesktopMyPlayerDspPipeline {
         }
     }
 
-    /**
-     * Recomputed per buffer (a few float ops) because the AudioFxService values the gain folding
-     * depends on (volumeCurve identity, ReplayGainParams, normalize) can all change live — Android's
-     * MyPlayerVolumeSink re-applies on the next handleBuffer the same way.
-     */
     private fun computeGain() {
         val audioFx = fx ?: return
         try {

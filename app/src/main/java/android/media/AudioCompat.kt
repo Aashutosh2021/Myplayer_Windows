@@ -1,5 +1,10 @@
 package android.media
 
+import android.content.Context
+import android.net.Uri
+import java.io.File
+import java.io.RandomAccessFile
+import java.nio.charset.StandardCharsets
 import java.util.concurrent.atomic.AtomicLong
 import javax.sound.sampled.AudioSystem
 import javax.sound.sampled.DataLine
@@ -75,6 +80,136 @@ class AudioFormat {
         const val ENCODING_PCM_16BIT = 2
         const val CHANNEL_OUT_STEREO = 12
         const val CHANNEL_OUT_MONO = 4
+    }
+}
+
+/**
+ * Pure-JVM Desktop implementation of Android's [MediaMetadataRetriever].
+ * Parses embedded cover art (`APIC` in ID3v2 MP3, `covr` in MP4/M4A) and
+ * embedded lyrics (`USLT`/`SYLT` in ID3v2 MP3, `©lyr` in MP4/M4A) directly from local files.
+ */
+class MediaMetadataRetriever {
+    private var targetFile: File? = null
+
+    fun setDataSource(path: String) {
+        val clean = when {
+            path.startsWith("file://") -> path.removePrefix("file://")
+            path.startsWith("file:/") -> path.removePrefix("file:")
+            else -> path
+        }
+        targetFile = File(clean)
+    }
+
+    fun setDataSource(context: Context, uri: Uri) {
+        setDataSource(uri.path ?: uri.toString())
+    }
+
+    fun getEmbeddedPicture(): ByteArray? {
+        val file = targetFile ?: return null
+        if (!file.exists() || !file.isFile || file.length() <= 16) return null
+        return try {
+            val bytes = file.inputStream().use { stream ->
+                // Read up to 4 MB header/metadata window where ID3v2 and MP4 moov/udta live
+                val maxRead = minOf(file.length(), 4L * 1024 * 1024).toInt()
+                val buf = ByteArray(maxRead)
+                var total = 0
+                while (total < maxRead) {
+                    val r = stream.read(buf, total, maxRead - total)
+                    if (r <= 0) break
+                    total += r
+                }
+                if (total < maxRead) buf.copyOf(total) else buf
+            }
+            extractJpegOrPngBytes(bytes)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun extractMetadata(keyCode: Int): String? {
+        val file = targetFile ?: return null
+        if (!file.exists() || !file.isFile) return null
+        if (keyCode == METADATA_KEY_LYRICS) {
+            // Check companion .lrc first if present next to audio file
+            val companionLrc = File(file.parentFile, "${file.nameWithoutExtension}.lrc")
+            if (companionLrc.exists() && companionLrc.length() > 0) {
+                return runCatching { companionLrc.readText(StandardCharsets.UTF_8) }.getOrNull()
+            }
+            return extractEmbeddedLyricsFromBytes(file)
+        }
+        return null
+    }
+
+    fun release() {
+        targetFile = null
+    }
+
+    private fun extractJpegOrPngBytes(data: ByteArray): ByteArray? {
+        // Look for JPEG SOI (FF D8 FF E0 / FF D8 FF E1) inside APIC or MP4 covr data atom
+        for (i in 0 until data.size - 16) {
+            // Check for 'APIC' (ID3v2) or 'covr' (MP4)
+            val isApic = data[i] == 'A'.code.toByte() && data[i + 1] == 'P'.code.toByte() &&
+                data[i + 2] == 'I'.code.toByte() && data[i + 3] == 'C'.code.toByte()
+            val isCovr = data[i] == 'c'.code.toByte() && data[i + 1] == 'o'.code.toByte() &&
+                data[i + 2] == 'v'.code.toByte() && data[i + 3] == 'r'.code.toByte()
+            if (isApic || isCovr) {
+                val searchEnd = minOf(data.size - 4, i + 1024 * 1024)
+                for (j in i + 4 until searchEnd) {
+                    // JPEG magic: FF D8 FF
+                    if (data[j] == 0xFF.toByte() && data[j + 1] == 0xD8.toByte() && data[j + 2] == 0xFF.toByte()) {
+                        for (k in j + 4 until searchEnd) {
+                            if (data[k] == 0xFF.toByte() && data[k + 1] == 0xD9.toByte()) {
+                                return data.copyOfRange(j, k + 2)
+                            }
+                        }
+                    }
+                    // PNG magic: 89 50 4E 47
+                    if (data[j] == 0x89.toByte() && data[j + 1] == 0x50.toByte() &&
+                        data[j + 2] == 0x4E.toByte() && data[j + 3] == 0x47.toByte()
+                    ) {
+                        for (k in j + 8 until searchEnd - 8) {
+                            if (data[k] == 'I'.code.toByte() && data[k + 1] == 'E'.code.toByte() &&
+                                data[k + 2] == 'N'.code.toByte() && data[k + 3] == 'D'.code.toByte()
+                            ) {
+                                return data.copyOfRange(j, minOf(data.size, k + 8))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    private fun extractEmbeddedLyricsFromBytes(file: File): String? {
+        return try {
+            val maxRead = minOf(file.length(), 1024L * 1024L).toInt()
+            val bytes = ByteArray(maxRead)
+            RandomAccessFile(file, "r").use { raf -> raf.readFully(bytes) }
+            // Look for ID3v2 USLT frame
+            for (i in 0 until bytes.size - 14) {
+                if (bytes[i] == 'U'.code.toByte() && bytes[i + 1] == 'S'.code.toByte() &&
+                    bytes[i + 2] == 'L'.code.toByte() && bytes[i + 3] == 'T'.code.toByte()
+                ) {
+                    val size = ((bytes[i + 4].toInt() and 0xFF) shl 24) or
+                        ((bytes[i + 5].toInt() and 0xFF) shl 16) or
+                        ((bytes[i + 6].toInt() and 0xFF) shl 8) or
+                        (bytes[i + 7].toInt() and 0xFF)
+                    if (size in 6..65536 && i + 10 + size <= bytes.size) {
+                        val raw = String(bytes, i + 14, size - 4, StandardCharsets.UTF_8)
+                            .trim { it <= ' ' || it == '\u0000' }
+                        if (raw.length > 10) return raw
+                    }
+                }
+            }
+            null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    companion object {
+        const val METADATA_KEY_LYRICS = 1000
     }
 }
 

@@ -1,4 +1,4 @@
-﻿package com.example.myplayer.ui.myplayer
+package com.example.myplayer.ui.myplayer
 
 import android.content.Context
 import android.content.Intent
@@ -125,8 +125,8 @@ object MyPlayerRemoteNotificationManager {
                     val message = fields.optJSONObject("message")?.optString("stringValue", "").orEmpty()
                     if (title.isBlank() && message.isBlank()) continue
 
-                    val category = fields.optJSONObject("category")?.optString("stringValue", "UPDATE ðŸš€") ?: "UPDATE ðŸš€"
-                    val buttonText = fields.optJSONObject("buttonText")?.optString("stringValue", "Check It Out ðŸ”¥") ?: "Check It Out ðŸ”¥"
+                    val category = fields.optJSONObject("category")?.optString("stringValue", "UPDATE 🚀") ?: "UPDATE 🚀"
+                    val buttonText = fields.optJSONObject("buttonText")?.optString("stringValue", "Check It Out 🔥") ?: "Check It Out 🔥"
                     val actionUrl = fields.optJSONObject("actionUrl")?.optString("stringValue", "").orEmpty()
                     val showSys = fields.optJSONObject("showSystemNotification")?.optBoolean("booleanValue", true) ?: true
                     val showPopup = fields.optJSONObject("showInAppPopup")?.optBoolean("booleanValue", true) ?: true
@@ -160,7 +160,7 @@ object MyPlayerRemoteNotificationManager {
                 notificationHistory = sorted
                 unreadCount = sorted.count { it.id !in seenIds }
                 val timeStr = SimpleDateFormat("hh:mm:ss a", Locale.getDefault()).format(Date())
-                lastCheckStatus = "Synced $timeStr â€¢ ${sorted.size} notification(s)"
+                lastCheckStatus = "Synced $timeStr • ${sorted.size} notification(s)"
 
                 if (newestUnseen != null) {
                     seenIds.add(newestUnseen.id)
@@ -353,7 +353,7 @@ fun MyPlayerRemoteNotificationsCenterScreen(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "Connected to https://myplayer-660ee.web.app â€¢ ${MyPlayerRemoteNotificationManager.lastCheckStatus}",
+                text = "Connected to https://myplayer-660ee.web.app • ${MyPlayerRemoteNotificationManager.lastCheckStatus}",
                 fontSize = 12.sp,
                 color = MyPlayerAccentGreen
             )

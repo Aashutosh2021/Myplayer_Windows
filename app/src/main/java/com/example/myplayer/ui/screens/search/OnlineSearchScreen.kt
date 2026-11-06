@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.items
@@ -32,9 +33,10 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import coil.compose.AsyncImage
 import com.example.myplayer.data.online.model.OnlineSong
-import com.example.myplayer.data.local.entity.PlayedSongHistoryEntity
 import com.example.myplayer.data.local.entity.RecentSearchEntity
+import com.example.myplayer.data.local.entity.PlayedSongHistoryEntity
 import com.example.myplayer.ui.components.ClayIconButton
+import com.example.myplayer.ui.myplayer.*
 import com.example.myplayer.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -82,7 +84,7 @@ fun OnlineSearchScreen(
                         viewModel.deleteDownload(songToRemoveDownload!!.videoId)
                         songToRemoveDownload = null
                     },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFBA1A1A))
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                 ) { Text("Remove") }
             },
             dismissButton = {
@@ -219,7 +221,8 @@ fun OnlineSearchScreen(
                 onAddToPlaylistClick = { song -> songToAddToPlaylist = song },
                 onRemoveDownloadClick = { songToRemoveDownload = it },
                 onAddAllClick = { showAddAllDialog = true },
-                bottomPadding = bottomPadding
+                bottomPadding = bottomPadding,
+                isLinkSearch = remember(query) { com.example.myplayer.data.online.InnertubeApi.extractYouTubeVideoId(query) != null }
             )
         }
 
@@ -273,48 +276,71 @@ fun SearchHistorySection(
         )
     }
 
-    if (playedHistory.isEmpty() && searches.isEmpty()) {
-        Box(
-            modifier = Modifier.fillMaxSize().padding(48.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(
-                    modifier = Modifier
-                        .size(90.dp)
-                        .clayConcave(borderRadius = 45.dp, backgroundColor = MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Filled.History,
-                        null,
-                        tint = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.size(44.dp)
-                    )
-                }
-                Spacer(Modifier.height(20.dp))
-                Text(
-                    "No Played Songs History",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Songs you play in the last 15 days (online or downloaded) will appear here.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
-        return
-    }
-
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 8.dp, bottom = bottomPadding),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        // ── MyPlayer Moods & Moments ──────────────────────────────────────────
+        item {
+            Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Moods & Moments",
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "MyPlayer AI",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    items(MYPLAYER_MOODS.size) { idx ->
+                        val mood = MYPLAYER_MOODS[idx]
+                        MyPlayerMoodGenreCard(
+                            item = mood,
+                            onClick = { onSearchClick(mood.title) },
+                            modifier = Modifier.width(160.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── MyPlayer Explore Genres ───────────────────────────────────────────
+        item {
+            Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                Text(
+                    text = "Explore Genres",
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+                )
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    items(MYPLAYER_GENRES.size) { idx ->
+                        val genre = MYPLAYER_GENRES[idx]
+                        MyPlayerMoodGenreCard(
+                            item = genre,
+                            onClick = { onSearchClick(genre.title) },
+                            modifier = Modifier.width(160.dp)
+                        )
+                    }
+                }
+            }
+        }
+
         if (playedHistory.isNotEmpty()) {
             item {
                 Row(
@@ -419,7 +445,7 @@ fun SearchHistorySection(
                             if (!song.isOnline) {
                                 Surface(
                                     shape = RoundedCornerShape(4.dp),
-                                    color = Color(0xFF2E7D32).copy(alpha = 0.15f)
+                                    color = (if (ThemeState.isDarkMode) Color(0xFF66BB6A) else Color(0xFF2E7D32)).copy(alpha = 0.15f)
                                 ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
@@ -428,14 +454,14 @@ fun SearchHistorySection(
                                         Icon(
                                             imageVector = Icons.Filled.FileDownloadDone,
                                             contentDescription = null,
-                                            tint = Color(0xFF2E7D32),
+                                            tint = if (ThemeState.isDarkMode) Color(0xFF66BB6A) else Color(0xFF2E7D32),
                                             modifier = Modifier.size(11.dp)
                                         )
                                         Spacer(Modifier.width(2.dp))
                                         Text(
                                             text = "Downloaded",
                                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                                            color = Color(0xFF2E7D32),
+                                            color = if (ThemeState.isDarkMode) Color(0xFF66BB6A) else Color(0xFF2E7D32),
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
@@ -588,7 +614,8 @@ fun OnlineResultsList(
     onAddToPlaylistClick: (OnlineSong) -> Unit,
     onRemoveDownloadClick: (OnlineSong) -> Unit,
     onAddAllClick: () -> Unit,
-    bottomPadding: Dp = 100.dp
+    bottomPadding: Dp = 100.dp,
+    isLinkSearch: Boolean = false
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
@@ -616,9 +643,11 @@ fun OnlineResultsList(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "${results.itemCount} online results",
+                        if (isLinkSearch) "Matched from YouTube link • ${results.itemCount} songs"
+                        else "${results.itemCount} online results",
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = if (isLinkSearch) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (isLinkSearch) FontWeight.SemiBold else FontWeight.Normal
                     )
                     TextButton(
                         onClick = onAddAllClick,
@@ -651,7 +680,7 @@ fun OnlineResultsList(
                     Spacer(Modifier.height(24.dp))
                     Text("Couldn't reach server", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                     Spacer(Modifier.height(4.dp))
-                    Text(e.message ?: "Unknown error", style = MaterialTheme.typography.bodySmall, color = Color(0xFFBA1A1A))
+                    Text(e.message ?: "Unknown error", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                     Spacer(Modifier.height(16.dp))
                     Button(onClick = { results.retry() }, colors = ButtonDefaults.buttonColors(containerColor = ClayPrimary)) { Text("Retry") }
                 }
@@ -670,6 +699,7 @@ fun OnlineResultsList(
                 isDownloaded = isDownloaded,
                 isStreaming = isStreaming,
                 isDownloading = isDownloading,
+                isLinkMatch = isLinkSearch && index == 0,
                 onPlayClick = {
                     val contextSongs = mutableListOf<OnlineSong>()
                     for (i in 0 until results.itemCount) {
@@ -704,6 +734,7 @@ fun OnlineSongCard(
     isDownloaded: Boolean,
     isStreaming: Boolean,
     isDownloading: Boolean,
+    isLinkMatch: Boolean = false,
     onPlayClick: () -> Unit,
     onDownloadClick: () -> Unit,
     onAddToPlaylistClick: () -> Unit,
@@ -784,6 +815,27 @@ fun OnlineSongCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                if (isLinkMatch) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                        modifier = Modifier.padding(start = 6.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        ) {
+                            Icon(Icons.Filled.Link, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(10.dp))
+                            Spacer(Modifier.width(2.dp))
+                            Text(
+                                text = "Link Match",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
             }
         }
 
@@ -853,8 +905,8 @@ fun OnlineSongCard(
                         )
                         if (isDownloaded) {
                             DropdownMenuItem(
-                                text = { Text("Remove Download", color = Color(0xFFBA1A1A)) },
-                                leadingIcon = { Icon(Icons.Filled.Delete, null, tint = Color(0xFFBA1A1A)) },
+                                text = { Text("Remove Download", color = MaterialTheme.colorScheme.error) },
+                                leadingIcon = { Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error) },
                                 onClick = {
                                     showMenu = false
                                     onRemoveDownloadClick()

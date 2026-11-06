@@ -1,4 +1,4 @@
-﻿package com.example.myplayer.ui.myplayer
+package com.example.myplayer.ui.myplayer
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -40,57 +40,57 @@ enum class MyPlayerVibeCategory(
 ) {
     SAD_HEARTBREAK(
         label = "Sad / Heartbreak",
-        emoji = "ðŸ˜­ðŸ’”",
+        emoji = "😭💔",
         badgeText = "AASHIQUI MODE DETECTED",
         accentColor = Color(0xFF7E57C2),
         secondaryColor = Color(0xFF3949AB),
-        primaryButtonText = "Sab Theek Hai Bhai ðŸ˜Ž",
-        switchButtonText = "Mood Change Karo! ðŸ”¥"
+        primaryButtonText = "Sab Theek Hai Bhai 😎",
+        switchButtonText = "Mood Change Karo! 🔥"
     ),
     PARTY_BANGER(
         label = "Party / Dance",
-        emoji = "ðŸ•ºðŸŽ‰",
+        emoji = "🕺🎉",
         badgeText = "FULL MAHAUL MODE",
         accentColor = Color(0xFFFF4081),
         secondaryColor = Color(0xFFFF9100),
-        primaryButtonText = "Full Party Chal Rahi Hai! ðŸ¥³",
-        switchButtonText = "Agla Banger Bajao âš¡"
+        primaryButtonText = "Full Party Chal Rahi Hai! 🥳",
+        switchButtonText = "Agla Banger Bajao ⚡"
     ),
     ROMANTIC_LOVE(
         label = "Romantic / Love",
-        emoji = "ðŸ˜ðŸŒ¹",
+        emoji = "😍🌹",
         badgeText = "PYAAR MOHABBAT ALERT",
         accentColor = Color(0xFFE91E63),
         secondaryColor = Color(0xFFAD1457),
-        primaryButtonText = "Nazar Mat Laga Bhai ðŸ§¿ðŸ˜‚",
-        switchButtonText = "Next Song â–¶"
+        primaryButtonText = "Nazar Mat Laga Bhai 🧿😂",
+        switchButtonText = "Next Song ▶"
     ),
     WORKOUT_HUSTLE(
         label = "Gym / Beast Mode",
-        emoji = "ðŸ’ªðŸ”¥",
+        emoji = "💪🔥",
         badgeText = "BEAST & HUSTLE MODE",
         accentColor = Color(0xFF38E54D),
         secondaryColor = Color(0xFF00BFA5),
-        primaryButtonText = "Aaj Toofani Karenge! ðŸ’ª",
-        switchButtonText = "Next Banger ðŸ”¥"
+        primaryButtonText = "Aaj Toofani Karenge! 💪",
+        switchButtonText = "Next Banger 🔥"
     ),
     DEVOTIONAL_PEACE(
         label = "Bhakti / Sukoon",
-        emoji = "ðŸ™âœ¨",
+        emoji = "🙏✨",
         badgeText = "SUKOON & BHAKTI VIBE",
         accentColor = Color(0xFFFFB300),
         secondaryColor = Color(0xFFF57C00),
-        primaryButtonText = "Dil Ko Sukoon Mila ðŸ™",
-        switchButtonText = "Continue Listening âœ¨"
+        primaryButtonText = "Dil Ko Sukoon Mila 🙏",
+        switchButtonText = "Continue Listening ✨"
     ),
     CHILL_LOFI(
         label = "Chill / Late Night",
-        emoji = "ðŸŒ™ðŸŽ§",
+        emoji = "🌙🎧",
         badgeText = "CHILL & OVERTHINKING ZONE",
         accentColor = Color(0xFF26C6DA),
         secondaryColor = Color(0xFF5C6BC0),
-        primaryButtonText = "Bas Vibe Le Raha Hu ðŸ˜Œ",
-        switchButtonText = "Kuch Energetic Bajao âš¡"
+        primaryButtonText = "Bas Vibe Le Raha Hu 😌",
+        switchButtonText = "Kuch Energetic Bajao ⚡"
     )
 }
 
@@ -217,12 +217,12 @@ object MyPlayerVibeCheckManager {
         return when (category) {
             MyPlayerVibeCategory.SAD_HEARTBREAK -> {
                 val options = listOf(
-                    "à¤­à¤¾à¤ˆ à¤¬à¤¹à¥à¤¤ à¤¸à¥ˆà¤¡ à¤²à¤— à¤°à¤¹à¤¾ à¤¹à¥ˆ... à¤•à¥à¤¯à¤¾ à¤¬à¤¾à¤¤ à¤¹à¥‹ à¤—à¤ˆ? ðŸ¥ºðŸ’”" to
-                            "à¤ªà¤¿à¤›à¤²à¥‡ $mins à¤®à¤¿à¤¨à¤Ÿ à¤¸à¥‡ à¤²à¤—à¤¾à¤¤à¤¾à¤° Sad Songs à¤¸à¥à¤¨ à¤°à¤¹à¤¾ à¤¹à¥ˆ! à¤¸à¤¬ à¤ à¥€à¤• à¤¤à¥‹ à¤¹à¥ˆ à¤­à¤¾à¤ˆ? à¤•à¤¿à¤¸à¤¨à¥‡ à¤¦à¤¿à¤² à¤¤à¥‹à¤¡à¤¼ à¤¦à¤¿à¤¯à¤¾ à¤¯à¤¾ à¤ªà¥à¤°à¤¾à¤¨à¥€ à¤¯à¤¾à¤¦à¥‡à¤‚ à¤¤à¤¾à¤œà¤¼à¤¾ à¤¹à¥‹ à¤—à¤ˆà¤‚? à¤ªà¤¾à¤¨à¥€ à¤ªà¥€ à¤²à¥‡ à¤¯à¤¾à¤°, à¤¹à¤® à¤¹à¥ˆà¤‚ à¤¨à¤¾!",
-                    "à¤…à¤°à¥‡ à¤­à¤¾à¤ˆ à¤¬à¤¸ à¤•à¤°, à¤°à¥à¤²à¤¾à¤à¤—à¤¾ à¤•à¥à¤¯à¤¾? ðŸ˜­ðŸŽ»" to
-                            "à¤ªà¤¿à¤›à¤²à¥‡ $mins à¤®à¤¿à¤¨à¤Ÿ à¤¸à¥‡ à¤«à¥à¤² à¤†à¤¶à¤¿à¤•à¥€/à¤¦à¤°à¥à¤¦ à¤­à¤°à¥‡ à¤—à¤¾à¤¨à¥‡ à¤¬à¤œ à¤°à¤¹à¥‡ à¤¹à¥ˆà¤‚! Arijit Singh à¤­à¥€ à¤«à¥‹à¤¨ à¤¸à¥‡ à¤¬à¤¾à¤¹à¤° à¤†à¤•à¤° à¤ªà¥‚à¤›à¤¨à¥‡ à¤µà¤¾à¤²à¤¾ à¤¹à¥ˆ â€” 'à¤­à¤¾à¤ˆ à¤Ÿà¤¿à¤¶à¥‚ à¤ªà¥‡à¤ªà¤° à¤­à¤¿à¤œà¤µà¤¾à¤Šà¤‚ à¤¯à¤¾ à¤®à¥‚à¤¡ à¤šà¥‡à¤‚à¤œ à¤•à¤°à¥‡à¤‚?'",
-                    "à¤šà¥‡à¤¤à¤¾à¤µà¤¨à¥€ âš ï¸: Sadness Overload! ðŸ’”" to
-                            "$mins à¤®à¤¿à¤¨à¤Ÿ à¤¸à¥‡ à¤¸à¥ˆà¤¡ à¤¸à¥‰à¤¨à¥à¤— à¤šà¤² à¤°à¤¹à¥‡ à¤¹à¥ˆà¤‚! à¤‡à¤¤à¤¨à¥€ à¤¦à¥‡à¤° à¤¦à¤°à¥à¤¦ à¤­à¤°à¥‡ à¤—à¤¾à¤¨à¥‡ à¤¸à¥à¤¨à¤¨à¥‡ à¤¸à¥‡ à¤ªà¥à¤°à¤¾à¤¨à¥€ à¤šà¥ˆà¤Ÿà¥à¤¸ à¤¸à¥à¤•à¥à¤°à¥‰à¤² à¤•à¤°à¤¨à¥‡ à¤•à¤¾ à¤–à¤¤à¤°à¤¾ 99% à¤¬à¤¢à¤¼ à¤œà¤¾à¤¤à¤¾ à¤¹à¥ˆà¥¤ à¤šà¤²à¥‹ à¤…à¤¬ à¤¥à¥‹à¤¡à¤¼à¤¾ à¤®à¤¾à¤¹à¥Œà¤² à¤¬à¤¦à¤²à¤¤à¥‡ à¤¹à¥ˆà¤‚!"
+                    "भाई बहुत सैड लग रहा है... क्या बात हो गई? 🥺💔" to
+                            "पिछले $mins मिनट से लगातार Sad Songs सुन रहा है! सब ठीक तो है भाई? किसने दिल तोड़ दिया या पुरानी यादें ताज़ा हो गईं? पानी पी ले यार, हम हैं ना!",
+                    "अरे भाई बस कर, रुलाएगा क्या? 😭🎻" to
+                            "पिछले $mins मिनट से फुल आशिकी/दर्द भरे गाने बज रहे हैं! Arijit Singh भी फोन से बाहर आकर पूछने वाला है — 'भाई टिशू पेपर भिजवाऊं या मूड चेंज करें?'",
+                    "चेतावनी ⚠️: Sadness Overload! 💔" to
+                            "$mins मिनट से सैड सॉन्ग चल रहे हैं! इतनी देर दर्द भरे गाने सुनने से पुरानी चैट्स स्क्रॉल करने का खतरा 99% बढ़ जाता है। चलो अब थोड़ा माहौल बदलते हैं!"
                 )
                 val (head, body) = options[pick % options.size]
                 MyPlayerVibePopupEvent(category, mins, head, body, songTitle)
@@ -230,12 +230,12 @@ object MyPlayerVibeCheckManager {
 
             MyPlayerVibeCategory.PARTY_BANGER -> {
                 val options = listOf(
-                    "à¤“à¤¹à¥‹! à¤†à¤œ à¤¤à¥‹ à¤«à¥à¤² à¤®à¥‚à¤¡ à¤®à¥‡à¤‚ à¤²à¤— à¤°à¤¹à¤¾ à¤¹à¥ˆ à¤­à¤¾à¤ˆ! ðŸ•ºðŸŽ‰" to
-                            "à¤ªà¤¿à¤›à¤²à¥‡ $mins à¤®à¤¿à¤¨à¤Ÿ à¤¸à¥‡ à¤²à¤—à¤¾à¤¤à¤¾à¤° Party Bangers à¤¬à¤œ à¤°à¤¹à¥‡ à¤¹à¥ˆà¤‚! à¤•à¥à¤¯à¤¾ à¤–à¥à¤¶à¥€ à¤•à¥€ à¤¬à¤¾à¤¤ à¤¹à¥ˆ à¤­à¤¾à¤ˆ? à¤²à¥‰à¤Ÿà¤°à¥€ à¤²à¤— à¤—à¤ˆ, à¤¸à¥ˆà¤²à¤°à¥€ à¤† à¤—à¤ˆ à¤¯à¤¾ à¤•à¥à¤°à¤¶ à¤•à¤¾ à¤°à¤¿à¤ªà¥à¤²à¤¾à¤ˆ à¤† à¤—à¤¯à¤¾?",
-                    "à¤…à¤•à¥‡à¤²à¥‡-à¤…à¤•à¥‡à¤²à¥‡ à¤ªà¤¾à¤°à¥à¤Ÿà¥€ à¤¹à¥‹ à¤°à¤¹à¥€ à¤¹à¥ˆ à¤­à¤¾à¤ˆ? ðŸ¥³ðŸ”¥" to
-                            "$mins à¤®à¤¿à¤¨à¤Ÿ à¤¸à¥‡ à¤¨à¥‰à¤¨-à¤¸à¥à¤Ÿà¥‰à¤ª à¤¡à¤¾à¤‚à¤¸ à¤”à¤° à¤ªà¤¾à¤°à¥à¤Ÿà¥€ à¤Ÿà¥à¤°à¥ˆà¤• à¤šà¤² à¤°à¤¹à¥‡ à¤¹à¥ˆà¤‚! à¤ªà¤¡à¤¼à¥‹à¤¸à¥€ à¤­à¥€ à¤ªà¥‚à¤› à¤°à¤¹à¥‡ à¤¹à¥ˆà¤‚ à¤•à¤¿ à¤†à¤œ à¤•à¤¿à¤¸ à¤–à¥à¤¶à¥€ à¤®à¥‡à¤‚ DJ à¤¬à¤¨à¤¾ à¤¬à¥ˆà¤ à¤¾ à¤¹à¥ˆ?",
-                    "à¤†à¤œ à¤¤à¥‹ à¤…à¤²à¤— à¤¹à¥€ à¤²à¥‡à¤µà¤² à¤•à¤¾ à¤®à¤¾à¤¹à¥Œà¤² à¤¹à¥ˆ! âš¡ðŸ¾" to
-                            "à¤²à¤—à¤¾à¤¤à¤¾à¤° $mins à¤®à¤¿à¤¨à¤Ÿ à¤¸à¥‡ à¤«à¥à¤² à¤à¤¨à¤°à¥à¤œà¥€ à¤ªà¤¾à¤°à¥à¤Ÿà¥€ à¤®à¥à¤¯à¥‚à¤œà¤¿à¤• à¤šà¤² à¤°à¤¹à¤¾ à¤¹à¥ˆ! à¤à¤¸à¥‡ à¤¹à¥€ à¤–à¥à¤¶ à¤°à¤¹ à¤®à¥‡à¤°à¥‡ à¤­à¤¾à¤ˆ, à¤ªà¤¾à¤°à¥à¤Ÿà¥€ à¤°à¥à¤•à¤¨à¥€ à¤¨à¤¹à¥€à¤‚ à¤šà¤¾à¤¹à¤¿à¤!"
+                    "ओहो! आज तो फुल मूड में लग रहा है भाई! 🕺🎉" to
+                            "पिछले $mins मिनट से लगातार Party Bangers बज रहे हैं! क्या खुशी की बात है भाई? लॉटरी लग गई, सैलरी आ गई या क्रश का रिप्लाई आ गया?",
+                    "अकेले-अकेले पार्टी हो रही है भाई? 🥳🔥" to
+                            "$mins मिनट से नॉन-स्टॉप डांस और पार्टी ट्रैक चल रहे हैं! पड़ोसी भी पूछ रहे हैं कि आज किस खुशी में DJ बना बैठा है?",
+                    "आज तो अलग ही लेवल का माहौल है! ⚡🍾" to
+                            "लगातार $mins मिनट से फुल एनर्जी पार्टी म्यूजिक चल रहा है! ऐसे ही खुश रह मेरे भाई, पार्टी रुकनी नहीं चाहिए!"
                 )
                 val (head, body) = options[pick % options.size]
                 MyPlayerVibePopupEvent(category, mins, head, body, songTitle)
@@ -243,10 +243,10 @@ object MyPlayerVibeCheckManager {
 
             MyPlayerVibeCategory.ROMANTIC_LOVE -> {
                 val options = listOf(
-                    "à¤†à¤¯ à¤¹à¤¾à¤¯! à¤¬à¤¡à¤¼à¥‡ à¤°à¥‹à¤®à¤¾à¤‚à¤Ÿà¤¿à¤• à¤—à¤¾à¤¨à¥‡ à¤¸à¥à¤¨à¥‡ à¤œà¤¾ à¤°à¤¹à¥‡ à¤¹à¥ˆà¤‚! ðŸ˜ðŸŒ¹" to
-                            "à¤ªà¤¿à¤›à¤²à¥‡ $mins à¤®à¤¿à¤¨à¤Ÿ à¤¸à¥‡ à¤¸à¤¿à¤°à¥à¤« à¤ªà¥à¤¯à¤¾à¤°-à¤®à¥‹à¤¹à¤¬à¥à¤¬à¤¤ à¤µà¤¾à¤²à¥‡ à¤—à¤¾à¤¨à¥‡ à¤šà¤² à¤°à¤¹à¥‡ à¤¹à¥ˆà¤‚! à¤­à¤¾à¤ˆ à¤šà¤•à¥à¤•à¤° à¤•à¥à¤¯à¤¾ à¤¹à¥ˆ? à¤•à¥‹à¤ˆ à¤–à¤¾à¤¸ à¤®à¤¿à¤² à¤—à¤¯à¤¾ à¤¹à¥ˆ à¤¯à¤¾ à¤¹à¤µà¤¾à¤“à¤‚ à¤®à¥‡à¤‚ à¤‡à¤¶à¥à¤• à¤˜à¥à¤² à¤°à¤¹à¤¾ à¤¹à¥ˆ?",
-                    "à¤šà¥‡à¤¹à¤°à¥‡ à¤•à¥€ à¤®à¥à¤¸à¥à¤•à¤¾à¤¨ à¤›à¥à¤ªà¤¾à¤ à¤¨à¤¹à¥€à¤‚ à¤›à¥à¤ª à¤°à¤¹à¥€ à¤­à¤¾à¤ˆ! ðŸ’˜âœ¨" to
-                            "$mins à¤®à¤¿à¤¨à¤Ÿ à¤¸à¥‡ à¤¨à¥‰à¤¨-à¤¸à¥à¤Ÿà¥‰à¤ª Romantic Vibe à¤šà¤² à¤°à¤¹à¥€ à¤¹à¥ˆ! à¤•à¤¿à¤¸à¤•à¥‡ à¤–à¥à¤¯à¤¾à¤²à¥‹à¤‚ à¤®à¥‡à¤‚ à¤–à¥‹à¤¯à¤¾ à¤¹à¥à¤† à¤¹à¥ˆ à¤®à¥‡à¤°à¥‡ à¤­à¤¾à¤ˆ? à¤¨à¤œà¤¼à¤° à¤¨à¤¾ à¤²à¤—à¥‡!"
+                    "आय हाय! बड़े रोमांटिक गाने सुने जा रहे हैं! 😍🌹" to
+                            "पिछले $mins मिनट से सिर्फ प्यार-मोहब्बत वाले गाने चल रहे हैं! भाई चक्कर क्या है? कोई खास मिल गया है या हवाओं में इश्क घुल रहा है?",
+                    "चेहरे की मुस्कान छुपाए नहीं छुप रही भाई! 💘✨" to
+                            "$mins मिनट से नॉन-स्टॉप Romantic Vibe चल रही है! किसके ख्यालों में खोया हुआ है मेरे भाई? नज़र ना लगे!"
                 )
                 val (head, body) = options[pick % options.size]
                 MyPlayerVibePopupEvent(category, mins, head, body, songTitle)
@@ -254,27 +254,27 @@ object MyPlayerVibeCheckManager {
 
             MyPlayerVibeCategory.WORKOUT_HUSTLE -> {
                 val options = listOf(
-                    "à¤­à¤¾à¤ˆ à¤†à¤œ à¤¹à¥€ à¤¹à¤¿à¤®à¤¾à¤²à¤¯ à¤«à¤¤à¥‡à¤¹ à¤•à¤°à¥‡à¤—à¤¾ à¤•à¥à¤¯à¤¾? ðŸ’ªðŸ”¥" to
-                            "à¤ªà¤¿à¤›à¤²à¥‡ $mins à¤®à¤¿à¤¨à¤Ÿ à¤¸à¥‡ à¤«à¥à¤² Beast Mode à¤”à¤° Banger à¤—à¤¾à¤¨à¥‡ à¤¬à¤œ à¤°à¤¹à¥‡ à¤¹à¥ˆà¤‚! à¤œà¤¿à¤® à¤®à¥‡à¤‚ à¤²à¥‹à¤¹à¤¾ à¤ªà¤¿à¤˜à¤²à¤¾ à¤°à¤¹à¤¾ à¤¹à¥ˆ à¤¯à¤¾ à¤•à¤¿à¤¸à¥€ à¤¸à¥‡ à¤¬à¤¦à¤²à¤¾ à¤²à¥‡à¤¨à¥‡ à¤•à¥€ à¤¤à¥ˆà¤¯à¤¾à¤°à¥€ à¤šà¤² à¤°à¤¹à¥€ à¤¹à¥ˆ?",
-                    "à¤à¤¨à¤°à¥à¤œà¥€ à¤®à¥€à¤Ÿà¤° 200% à¤ªà¤¾à¤° à¤¹à¥‹ à¤—à¤¯à¤¾ à¤­à¤¾à¤ˆ! âš¡ðŸ˜¤" to
-                            "$mins à¤®à¤¿à¤¨à¤Ÿ à¤¸à¥‡ à¤²à¤—à¤¾à¤¤à¤¾à¤° à¤¤à¤—à¤¡à¤¼à¥‡ Hustle/Hip-Hop à¤Ÿà¥à¤°à¥ˆà¤• à¤šà¤² à¤°à¤¹à¥‡ à¤¹à¥ˆà¤‚! à¤†à¤œ à¤¤à¥‹ à¤­à¤¾à¤ˆ à¤•à¥‹ à¤•à¥‹à¤ˆ à¤¨à¤¹à¥€à¤‚ à¤°à¥‹à¤• à¤¸à¤•à¤¤à¤¾!"
+                    "भाई आज ही हिमालय फतेह करेगा क्या? 💪🔥" to
+                            "पिछले $mins मिनट से फुल Beast Mode और Banger गाने बज रहे हैं! जिम में लोहा पिघला रहा है या किसी से बदला लेने की तैयारी चल रही है?",
+                    "एनर्जी मीटर 200% पार हो गया भाई! ⚡😤" to
+                            "$mins मिनट से लगातार तगड़े Hustle/Hip-Hop ट्रैक चल रहे हैं! आज तो भाई को कोई नहीं रोक सकता!"
                 )
                 val (head, body) = options[pick % options.size]
                 MyPlayerVibePopupEvent(category, mins, head, body, songTitle)
             }
 
             MyPlayerVibeCategory.DEVOTIONAL_PEACE -> {
-                val (head, body) = "à¤µà¤¾à¤¹ à¤­à¤¾à¤ˆ! à¤†à¤œ à¤¤à¥‹ à¤à¤•à¤¦à¤® à¤­à¤•à¥à¤¤à¤¿ à¤”à¤° à¤¸à¥à¤•à¥‚à¤¨ à¤•à¤¾ à¤®à¤¾à¤¹à¥Œà¤² à¤¹à¥ˆ ðŸ™âœ¨" to
-                        "à¤ªà¤¿à¤›à¤²à¥‡ $mins à¤®à¤¿à¤¨à¤Ÿ à¤¸à¥‡ à¤à¤•à¤¦à¤® à¤¶à¤¾à¤‚à¤¤ à¤”à¤° à¤¸à¥à¤•à¥‚à¤¨ à¤¦à¥‡à¤¨à¥‡ à¤µà¤¾à¤²à¥‡ à¤—à¤¾à¤¨à¥‡ à¤¬à¤œ à¤°à¤¹à¥‡ à¤¹à¥ˆà¤‚à¥¤ à¤®à¤¨ à¤à¤•à¤¦à¤® à¤¹à¤²à¥à¤•à¤¾ à¤¹à¥‹ à¤—à¤¯à¤¾ à¤¨à¤¾?"
+                val (head, body) = "वाह भाई! आज तो एकदम भक्ति और सुकून का माहौल है 🙏✨" to
+                        "पिछले $mins मिनट से एकदम शांत और सुकून देने वाले गाने बज रहे हैं। मन एकदम हल्का हो गया ना?"
                 MyPlayerVibePopupEvent(category, mins, head, body, songTitle)
             }
 
             MyPlayerVibeCategory.CHILL_LOFI -> {
                 val options = listOf(
-                    "à¤­à¤¾à¤ˆ à¤¬à¤¡à¤¼à¥€ à¤—à¤¹à¤°à¥€ à¤¸à¥‹à¤š à¤®à¥‡à¤‚ à¤²à¤— à¤°à¤¹à¤¾ à¤¹à¥ˆ? ðŸŒ™ðŸŽ§" to
-                            "à¤ªà¤¿à¤›à¤²à¥‡ $mins à¤®à¤¿à¤¨à¤Ÿ à¤¸à¥‡ à¤²à¤—à¤¾à¤¤à¤¾à¤° Chill / Lo-Fi à¤µà¤¾à¤‡à¤¬ à¤šà¤² à¤°à¤¹à¥€ à¤¹à¥ˆ! à¤“à¤µà¤°à¤¥à¤¿à¤‚à¤•à¤¿à¤‚à¤— à¤šà¤² à¤°à¤¹à¥€ à¤¹à¥ˆ à¤¯à¤¾ à¤¬à¤¸ à¤¸à¥à¤•à¥‚à¤¨ à¤•à¥‡ à¤ªà¤² à¤œà¥€ à¤°à¤¹à¤¾ à¤¹à¥ˆ?",
-                    "à¤à¤•à¤¦à¤® à¤¸à¥à¤•à¥‚à¤¨ à¤µà¤¾à¤²à¤¾ à¤®à¤¾à¤¹à¥Œà¤² à¤¸à¥‡à¤Ÿ à¤¹à¥ˆ à¤­à¤¾à¤ˆ! âœ¨ðŸ˜Œ" to
-                            "$mins à¤®à¤¿à¤¨à¤Ÿ à¤¸à¥‡ à¤¨à¥‰à¤¨-à¤¸à¥à¤Ÿà¥‰à¤ª à¤¸à¥à¤®à¥‚à¤¦ à¤®à¥à¤¯à¥‚à¤œà¤¿à¤• à¤¸à¥à¤¨ à¤°à¤¹à¤¾ à¤¹à¥ˆ! à¤šà¤¾à¤¯/à¤•à¥‰à¤«à¥€ à¤¸à¤¾à¤¥ à¤®à¥‡à¤‚ à¤¹à¥ˆ à¤¯à¤¾ à¤¬à¤¸ à¤¹à¥‡à¤¡à¤«à¥‹à¤¨ à¤²à¤—à¤¾ à¤•à¥‡ à¤¦à¥à¤¨à¤¿à¤¯à¤¾ à¤‘à¤« à¤•à¤° à¤°à¤–à¥€ à¤¹à¥ˆ?"
+                    "भाई बड़ी गहरी सोच में लग रहा है? 🌙🎧" to
+                            "पिछले $mins मिनट से लगातार Chill / Lo-Fi वाइब चल रही है! ओवरथिंकिंग चल रही है या बस सुकून के पल जी रहा है?",
+                    "एकदम सुकून वाला माहौल सेट है भाई! ✨😌" to
+                            "$mins मिनट से नॉन-स्टॉप स्मूद म्यूजिक सुन रहा है! चाय/कॉफी साथ में है या बस हेडफोन लगा के दुनिया ऑफ कर रखी है?"
                 )
                 val (head, body) = options[pick % options.size]
                 MyPlayerVibePopupEvent(category, mins, head, body, songTitle)
@@ -338,7 +338,7 @@ fun MyPlayerVibeCheckPopupDialog(
                     border = BorderStroke(1.dp, event.category.accentColor.copy(alpha = 0.60f))
                 ) {
                     Text(
-                        text = "${event.category.badgeText} â€¢ ${event.elapsedMinutes} MIN STREAK",
+                        text = "${event.category.badgeText} • ${event.elapsedMinutes} MIN STREAK",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = Color.White,
@@ -455,7 +455,7 @@ fun MyPlayerFunnyVibeCheckSettingsCard(
                         .background(MyPlayerAccentPurple.copy(alpha = 0.22f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("ðŸ˜­ðŸŽ‰", fontSize = 18.sp)
+                    Text("😭🎉", fontSize = 18.sp)
                 }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(

@@ -1,4 +1,4 @@
-﻿package com.example.myplayer.ui.screens.nowplaying
+package com.example.myplayer.ui.screens.nowplaying
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -51,7 +51,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-// â”€â”€ Exact Reference Color Palette â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Exact Reference Color Palette ────────────────────────────────────────────
 private val PlayerBlack     = Color(0xFF171C26)
 private val PlayerDarkNavy  = Color(0xFF0F141D)
 private val PlayerSurface   = Color(0xFF1C2330)
@@ -123,7 +123,7 @@ fun NowPlayingVisual(
     val topBtnTint = if (isDark) PlayerWhite else CharcoalPrimary
 
     val configuration = LocalWindowInfo.current
-    val screenHeight = 640.dp // shortcut: desktop windows are viewport-sized; upgrade by bounding via onGloballyPositioned
+    val screenHeight = 640.dp
     val scrollState = rememberScrollState()
     val coroutineScope = rememberCoroutineScope()
 
@@ -133,16 +133,34 @@ fun NowPlayingVisual(
             .background(bgMain)
             .verticalScroll(scrollState)
     ) {
-        // â”€â”€ 1. Hero Player Viewport (Fills initial screen height) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── 1. Hero Player Viewport (Fills initial screen height) ─────────────
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(screenHeight)
         ) {
-            // Album Art Background (Fills top ~62% of initial viewport)
-            if (!artUri.isNullOrBlank()) {
+            // Album Art Background (Fills top ~62% of initial viewport, works 100% offline!)
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val resolvedArtModel = remember(artUri, title, artist, context) {
+                val cleanArt = artUri?.trim().orEmpty()
+                val ytId = Regex("""/vi/([a-zA-Z0-9_-]{11})/""").find(cleanArt)?.groupValues?.getOrNull(1)
+                val localArtFile = ytId?.let { java.io.File(java.io.File(context.filesDir, "artwork"), "$it.jpg") }
+                when {
+                    localArtFile != null && localArtFile.exists() && localArtFile.length() > 512L ->
+                        android.net.Uri.fromFile(localArtFile).toString()
+                    cleanArt.isNotBlank() -> cleanArt
+                    !title.isNullOrBlank() && !artist.isNullOrBlank() ->
+                        com.example.myplayer.data.artwork.model.ArtworkModel(
+                            title = title,
+                            artist = artist,
+                            localUri = null
+                        )
+                    else -> null
+                }
+            }
+            if (resolvedArtModel != null) {
                 AsyncImage(
-                    model = artUri,
+                    model = resolvedArtModel,
                     contentDescription = title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
@@ -280,7 +298,7 @@ fun NowPlayingVisual(
                 )
             }
 
-            // â”€â”€ 2. The Spherical Dome Console (Locked Arc on Circle Border) â”€â”€
+            // ── 2. The Spherical Dome Console (Locked Arc on Circle Border) ──
             val domeHeight = screenHeight * 0.54f
 
             Box(
@@ -468,7 +486,7 @@ fun NowPlayingVisual(
                     )
                 }
 
-                // â”€â”€ Like (Heart) Button: Aligned directly below the arc apex â”€â”€
+                // ── Like (Heart) Button: Aligned directly below the arc apex ──
                 IconButton(
                     onClick = onFavorite,
                     modifier = Modifier
@@ -484,7 +502,7 @@ fun NowPlayingVisual(
                     )
                 }
 
-                // â”€â”€ Shuffle, Curved Accent Pill, Repeat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                // ── Shuffle, Curved Accent Pill, Repeat ───────────────────────
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -561,7 +579,7 @@ fun NowPlayingVisual(
                     }
                 }
 
-                // â”€â”€ Central Transport Pod: [|â—€]  (  [â–¶ / â¸]  )  [â–¶|] â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                // ── Central Transport Pod: [|◀]  (  [▶ / ⏸]  )  [▶|] ─────────
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -661,7 +679,7 @@ fun NowPlayingVisual(
                     }
                 }
 
-                // â”€â”€ Timestamps (Current Position & Duration) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                // ── Timestamps (Current Position & Duration) ──────────────────
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -684,7 +702,7 @@ fun NowPlayingVisual(
                     )
                 }
 
-                // â”€â”€ Swipe Up for Lyrics Prompt â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                // ── Swipe Up for Lyrics Prompt ────────────────────────────────
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -719,7 +737,7 @@ fun NowPlayingVisual(
             }
         }
 
-        // â”€â”€ 2. Synced Lyrics Section (Revealed smoothly on swipe up / scroll) â”€
+        // ── 2. Synced Lyrics Section (Revealed smoothly on swipe up / scroll) ─
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -811,4 +829,3 @@ private fun formatTime(milliseconds: Long): String {
     val seconds = totalSeconds % 60
     return "%d:%02d".format(minutes, seconds)
 }
-

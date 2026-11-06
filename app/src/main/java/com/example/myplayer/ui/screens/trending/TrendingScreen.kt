@@ -40,8 +40,24 @@ fun TrendingScreen(
     bottomPadding: Dp = 100.dp,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
-    val recommendations by viewModel.recommendations.collectAsStateWithLifecycle()
-    val isLoading by viewModel.isLoadingRecommendations.collectAsStateWithLifecycle()
+    val recommendations by viewModel.hotlistSongs.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoadingHotlist.collectAsStateWithLifecycle()
+    val selectedLanguages by viewModel.selectedLanguages.collectAsStateWithLifecycle()
+    val selectedGenres by viewModel.selectedGenres.collectAsStateWithLifecycle()
+    val selectedArtists by viewModel.selectedArtists.collectAsStateWithLifecycle()
+    val showTasteOnboarding by viewModel.showTasteOnboarding.collectAsStateWithLifecycle()
+
+    if (showTasteOnboarding) {
+        com.example.myplayer.ui.screens.home.TasteOnboardingDialog(
+            initialLanguages = selectedLanguages,
+            initialGenres = selectedGenres,
+            initialArtists = selectedArtists,
+            onDismiss = { viewModel.dismissTasteSelector() },
+            onSave = { langs, genres, artists ->
+                viewModel.saveUserTastePreferences(langs, genres, artists)
+            }
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -68,6 +84,15 @@ fun TrendingScreen(
                 )
                 Column {
                     Text(
+                        text = "MYPLAYER",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        ),
+                        color = MaterialTheme.colorScheme.secondary,
+                        fontSize = 10.sp
+                    )
+                    Text(
                         text = "Hotlist",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.primary
@@ -79,7 +104,7 @@ fun TrendingScreen(
                 modifier = Modifier
                     .size(38.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFFFDE8E8))
+                    .background(if (ThemeState.isDarkMode) Color(0xFF332024) else Color(0xFFFDE8E8))
                     .clickable { viewModel.refreshTrendingMusic() },
                 contentAlignment = Alignment.Center
             ) {
@@ -90,6 +115,31 @@ fun TrendingScreen(
                     modifier = Modifier.size(20.dp)
                 )
             }
+        }
+
+        val tasteSummary = remember(selectedLanguages, selectedGenres) {
+            val parts = (selectedLanguages.take(2) + selectedGenres.take(2))
+            if (parts.isEmpty()) "Global Viral • All Languages" else "World Trending • ${parts.joinToString(" • ")}"
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = tasteSummary,
+                style = MaterialTheme.typography.labelMedium,
+                color = NeonLimePrimary
+            )
+            Text(
+                text = "Change Taste",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.clickable { viewModel.openTasteSelector() }
+            )
         }
 
         if (isLoading && recommendations.isEmpty()) {
@@ -175,7 +225,7 @@ fun TrendingScreen(
                         }
                     }
 
-                    // ── Main Action Buttons: [> Play] and [Shuffle] (Image 1 Right) ──
+                    // ── Main Action Buttons: [> Play] and [Shuffle] ──
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -193,16 +243,16 @@ fun TrendingScreen(
                             shape = RoundedCornerShape(24.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.surface
+                                contentColor = MaterialTheme.colorScheme.onPrimary
                             ),
                             elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
                         ) {
-                            Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onPrimary)
                             Spacer(Modifier.width(8.dp))
-                            Text("Play", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
+                            Text("Play", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.onPrimary)
                         }
 
-                        OutlinedButton(
+                        Button(
                             onClick = {
                                 val shuffled = recommendations.shuffled()
                                 viewModel.playRecommendedSongs(shuffled, 0)
@@ -212,15 +262,15 @@ fun TrendingScreen(
                                 .weight(1f)
                                 .height(48.dp),
                             shape = RoundedCornerShape(24.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                containerColor = MaterialTheme.colorScheme.surface,
-                                contentColor = MaterialTheme.colorScheme.primary
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = MaterialTheme.colorScheme.onSurface
                             ),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
                         ) {
-                            Icon(Icons.Filled.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Filled.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
                             Spacer(Modifier.width(8.dp))
-                            Text("Shuffle", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text("Shuffle", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
                         }
                     }
 

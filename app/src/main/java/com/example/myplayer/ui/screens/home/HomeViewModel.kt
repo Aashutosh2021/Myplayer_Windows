@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.myplayer.data.local.dao.PlayedSongHistoryDao
 import com.example.myplayer.data.local.datastore.SettingsDataStore
 import com.example.myplayer.data.local.entity.SongEntity
 import com.example.myplayer.data.online.InnertubeApi
@@ -19,13 +20,12 @@ import com.example.myplayer.data.repository.DownloadRepository
 import com.example.myplayer.data.repository.MusicRepository
 import com.example.myplayer.data.repository.RecentHistoryRepository
 import com.example.myplayer.playback.MusicController
-import com.example.myplayer.ui.theme.ThemeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -33,6 +33,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val repository: MusicRepository,
     val musicController: MusicController,
     private val settingsDataStore: SettingsDataStore,
@@ -40,6 +41,7 @@ class HomeViewModel @Inject constructor(
     private val recommendationCoordinator: RecommendationCoordinator,
     private val userStateDetector: RecommendationUserStateDetector,
     private val recentHistoryRepository: RecentHistoryRepository,
+    private val playedSongHistoryDao: PlayedSongHistoryDao,
     private val innertubeApi: InnertubeApi,
     private val recommendationCache: RecommendationCache,
     private val lastFmRecommendationSource: LastFmRecommendationSource,
@@ -92,7 +94,9 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             aiModel.saveUserTasteProfile(languages, genres, artists)
             _categoryRecommendations.value = emptyMap()
-            refreshAiRecommendations()
+            // Refresh BOTH Home feed and World Trending Hotlist according to new taste!
+            launch { refreshAiRecommendations() }
+            launch { refreshTrendingMusic() }
         }
     }
 
@@ -116,14 +120,22 @@ class HomeViewModel @Inject constructor(
     private val _isLoadingRecommendations = MutableStateFlow(true)
     val isLoadingRecommendations: StateFlow<Boolean> = _isLoadingRecommendations.asStateFlow()
 
+    private val _hotlistSongs = MutableStateFlow<List<RecommendationSong>>(emptyList())
+    val hotlistSongs: StateFlow<List<RecommendationSong>> = _hotlistSongs.asStateFlow()
+
+    private val _isLoadingHotlist = MutableStateFlow(true)
+    val isLoadingHotlist: StateFlow<Boolean> = _isLoadingHotlist.asStateFlow()
+
     val userName: StateFlow<String> = settingsDataStore.userName
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Alex Rivera")
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
 
     val isDarkMode: StateFlow<Boolean> = settingsDataStore.isDarkMode
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeManager.isDark)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     fun toggleDarkMode() {
-        ThemeManager.toggle()
+        viewModelScope.launch {
+            settingsDataStore.setDarkMode(!isDarkMode.value)
+        }
     }
 
     private val downloadedEntities: Flow<List<SongEntity>> = downloadRepository.getAllDownloads()
@@ -174,8 +186,35 @@ class HomeViewModel @Inject constructor(
     val isPlaying = musicController.isPlaying
 
     init {
-        // 1. Sync existing local Favorites / MostPlayed / Downloads into On-Device AI Brain
-        viewModelScope.launch {
+        // Auto-sync username from legacy prefs or myplayer_ui_prefs if not yet in dataStore
+        viewModelScope.launch(Dispatchers.IO) {
+            val current = settingsDataStore.userName.first()
+            if (current.isBlank()) {
+                val savedName = context.getSharedPreferences("myplayer_ui_prefs", Context.MODE_PRIVATE)
+                    .getString("username", "") ?: ""
+                if (savedName.isNotBlank()) {
+                    settingsDataStore.setUserName(savedName)
+                }
+            }
+        }
+
+        // 1. Load initial Home recommendations & World Trending Hotlist in parallel
+        viewModelScope.launch(Dispatchers.IO) {
+            launch {
+                refreshAiRecommendations()
+                val topIds = _aiRecommendations.value.take(2).map { it.videoId }
+                if (topIds.isNotEmpty()) {
+                    innertubeApi.prefetchVisibleStreams(topIds)
+                }
+            }
+            launch {
+                refreshTrendingMusic()
+            }
+        }
+
+        // 2. Sync local library signals on IO thread after 2 seconds
+        viewModelScope.launch(Dispatchers.IO) {
+            delay(2_000L)
             combine(mostPlayed, favoriteSongs, downloadedEntities) { most, fav, down ->
                 val favIds = fav.map { it.id }.toSet()
                 val allSongsList = (fav + most + down).distinctBy { it.id }
@@ -187,7 +226,18 @@ class HomeViewModel @Inject constructor(
             }
         }
 
-        // 2. Observe played song — WAIT 4 SECONDS after click before doing ANY AI or Spotify work!
+        // 3. Background Spotify sync (delayed 4s so it NEVER slows down app startup)
+        viewModelScope.launch(Dispatchers.IO) {
+            delay(4_000L)
+            if (spotifyManager.isLoggedIn.value) {
+                spotifyManager.syncSpotifyTasteIntoAi()
+                // FIX: Refresh UI immediately after Spotify taste is seeded into AI!
+                _categoryRecommendations.value = emptyMap()
+                refreshAiRecommendations()
+            }
+        }
+
+        // 4. Observe played song — WAIT 4 SECONDS after click before doing ANY AI or Spotify work!
         viewModelScope.launch {
             combine(
                 musicController.currentSong,
@@ -217,10 +267,6 @@ class HomeViewModel @Inject constructor(
                             artist = playedArtist,
                             durationMs = playedDur
                         )
-                        // Refresh recommendations after learning first song if list was empty
-                        if (_aiRecommendations.value.isEmpty()) {
-                            refreshAiRecommendations()
-                        }
 
                         // Wait another 8s (total 12s of listening) before syncing with Spotify
                         if (spotifyManager.isLoggedIn.value) {
@@ -246,26 +292,10 @@ class HomeViewModel @Inject constructor(
             }
         }
 
-        // 3. Load initial AI recommendations on startup
-        viewModelScope.launch {
-            refreshAiRecommendations()
-        }
-
-        // 4. Periodic auto-refresh every 15 minutes (not constantly)
-        viewModelScope.launch {
+        // 5. Periodic auto-refresh every 15 minutes (not constantly)
+        viewModelScope.launch(Dispatchers.IO) {
             while (isActive) {
                 delay(15 * 60 * 1000L)
-                refreshAiRecommendations()
-            }
-        }
-
-        // 5. Background Spotify taste-sync (delayed 4s so it NEVER slows down app startup)
-        viewModelScope.launch(Dispatchers.IO) {
-            delay(4_000L)
-            if (spotifyManager.isLoggedIn.value) {
-                spotifyManager.syncSpotifyTasteIntoAi()
-                // FIX: Refresh UI immediately after Spotify taste is seeded into AI!
-                _categoryRecommendations.value = emptyMap()
                 refreshAiRecommendations()
             }
         }
@@ -279,8 +309,18 @@ class HomeViewModel @Inject constructor(
     }
 
     fun refreshTrendingMusic() {
-        viewModelScope.launch {
-            refreshAiRecommendations()
+        viewModelScope.launch(Dispatchers.IO) {
+            _isLoadingHotlist.value = true
+            try {
+                val worldTrending = aiModel.generateWorldTrendingHotlist(limit = 50)
+                if (worldTrending.isNotEmpty()) {
+                    _hotlistSongs.value = worldTrending
+                    // Prefetch top 2 Hotlist songs so tapping Play on Hotlist is 0ms instant!
+                    innertubeApi.prefetchVisibleStreams(worldTrending.take(2).map { it.videoId })
+                }
+            } finally {
+                _isLoadingHotlist.value = false
+            }
         }
     }
 

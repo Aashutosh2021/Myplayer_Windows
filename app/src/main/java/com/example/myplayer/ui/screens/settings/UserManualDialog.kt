@@ -1,4 +1,4 @@
-﻿package com.example.myplayer.ui.screens.settings
+package com.example.myplayer.ui.screens.settings
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -188,11 +188,11 @@ fun UserManualDialog(
                 id = "offline_downloads",
                 title = "Offline Downloads with Embedded ID3 Tags",
                 category = "Library & Offline",
-                path = "Tap (â‹®) on any song card > Download | Library > Downloads",
+                path = "Tap (⋮) on any song card > Download | Library > Downloads",
                 icon = Icons.Filled.Download,
                 summary = "Save high-bitrate audio with album artwork and complete metadata directly to storage.",
                 instructions = listOf(
-                    "One-Tap Download: Tap the three dots (â‹®) on any track or playlist and choose 'Download'.",
+                    "One-Tap Download: Tap the three dots (⋮) on any track or playlist and choose 'Download'.",
                     "Full Tagging: Files are saved with high-res album cover, artist, title, and album ID3 tags.",
                     "Custom Folder: Change download destination anytime in Settings > Download Folder.",
                     "Smart Retry: Network drops are caught automatically and resumed in the background."
@@ -475,7 +475,7 @@ private fun FeatureManualCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = "ðŸ“ Path:",
+                        text = "📍 Path:",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -508,7 +508,7 @@ private fun FeatureManualCard(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = "â€¢",
+                            text = "•",
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp
@@ -560,5 +560,4 @@ private fun FeatureManualCard(
         }
     }
 }
-
 

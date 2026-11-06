@@ -91,7 +91,8 @@ fun SettingsScreen(
         com.example.myplayer.ui.settings.AudioAndPlaybackScreen(
             store = viewModel.audioPlaybackStore,
             featureManagers = viewModel.audioFeatureManagers,
-            onBack = { showAudioPlaybackScreen = false }
+            onBack = { showAudioPlaybackScreen = false },
+            myplayerState = myplayerState
         )
         return
     }

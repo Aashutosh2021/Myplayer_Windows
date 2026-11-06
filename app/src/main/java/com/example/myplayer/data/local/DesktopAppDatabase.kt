@@ -5,7 +5,6 @@ import com.example.myplayer.data.local.entity.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
 import java.io.File
 import java.sql.Connection
 import java.sql.DriverManager
@@ -221,6 +220,27 @@ class DesktopAppDatabase : AppDatabase() {
             notifyChange("songs")
         }
 
+        override suspend fun insertSong(song: SongEntity) {
+            synchronized(connection) {
+                val ps = connection.prepareStatement("""
+                    INSERT OR REPLACE INTO songs (id, title, artist, album, duration, path, albumArt, dateAdded, playCount, videoId)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent())
+                ps.setString(1, song.id)
+                ps.setString(2, song.title)
+                ps.setString(3, song.artist)
+                ps.setString(4, song.album)
+                ps.setLong(5, song.duration)
+                ps.setString(6, song.path)
+                ps.setString(7, song.albumArt)
+                ps.setLong(8, song.dateAdded)
+                ps.setInt(9, song.playCount)
+                ps.setString(10, song.videoId)
+                ps.executeUpdate()
+            }
+            notifyChange("songs")
+        }
+
         override fun deleteSongsByFolder(folderUri: String) {
             synchronized(connection) {
                 val ps = connection.prepareStatement("DELETE FROM songs WHERE path LIKE ?")
@@ -251,6 +271,26 @@ class DesktopAppDatabase : AppDatabase() {
             synchronized(connection) {
                 val ps = connection.prepareStatement("UPDATE songs SET path = ? WHERE id = ?")
                 ps.setString(1, path)
+                ps.setString(2, id)
+                ps.executeUpdate()
+            }
+            notifyChange("songs")
+        }
+
+        override suspend fun updateSongArtwork(id: String, albumArt: String) {
+            synchronized(connection) {
+                val ps = connection.prepareStatement("UPDATE songs SET albumArt = ? WHERE id = ?")
+                ps.setString(1, albumArt)
+                ps.setString(2, id)
+                ps.executeUpdate()
+            }
+            notifyChange("songs")
+        }
+
+        override suspend fun updateSongVideoId(id: String, videoId: String) {
+            synchronized(connection) {
+                val ps = connection.prepareStatement("UPDATE songs SET videoId = ? WHERE id = ?")
+                ps.setString(1, videoId)
                 ps.setString(2, id)
                 ps.executeUpdate()
             }
@@ -310,6 +350,17 @@ class DesktopAppDatabase : AppDatabase() {
                     list.add(PlaylistEntity(rs.getLong("id"), rs.getString("name"), rs.getLong("createdAt")))
                 }
                 list
+            }
+        }
+
+        override suspend fun getPlaylistByName(name: String): PlaylistEntity? = synchronized(connection) {
+            val ps = connection.prepareStatement("SELECT * FROM playlists WHERE name = ? LIMIT 1")
+            ps.setString(1, name)
+            val rs = ps.executeQuery()
+            if (rs.next()) {
+                PlaylistEntity(rs.getLong("id"), rs.getString("name"), rs.getLong("createdAt"))
+            } else {
+                null
             }
         }
 
@@ -814,6 +865,44 @@ class DesktopAppDatabase : AppDatabase() {
         override suspend fun getLyricsForSong(songId: String): CachedLyricsEntity? = synchronized(connection) {
             val ps = connection.prepareStatement("SELECT * FROM cached_lyrics WHERE songId = ? LIMIT 1")
             ps.setString(1, songId)
+            val rs = ps.executeQuery()
+            if (rs.next()) {
+                CachedLyricsEntity(
+                    songId = rs.getString("songId"),
+                    plainLyrics = rs.getString("plainLyrics"),
+                    syncedLyrics = rs.getString("syncedLyrics"),
+                    trackName = rs.getString("trackName"),
+                    artistName = rs.getString("artistName"),
+                    cachedAt = rs.getLong("cachedAt")
+                )
+            } else null
+        }
+
+        override suspend fun getLyricsForSongOrMetadata(
+            songId: String,
+            trackName: String,
+            artistName: String
+        ): CachedLyricsEntity? = synchronized(connection) {
+            val ps = connection.prepareStatement("""
+                SELECT * FROM cached_lyrics 
+                WHERE songId = ? 
+                   OR (LOWER(TRIM(trackName)) = LOWER(TRIM(?)) AND LOWER(TRIM(artistName)) = LOWER(TRIM(?)))
+                   OR (LOWER(TRIM(trackName)) = LOWER(TRIM(?)) AND ? != '')
+                ORDER BY 
+                    CASE 
+                        WHEN songId = ? THEN 0 
+                        WHEN LOWER(TRIM(artistName)) = LOWER(TRIM(?)) THEN 1 
+                        ELSE 2 
+                    END
+                LIMIT 1
+            """.trimIndent())
+            ps.setString(1, songId)
+            ps.setString(2, trackName)
+            ps.setString(3, artistName)
+            ps.setString(4, trackName)
+            ps.setString(5, trackName.trim())
+            ps.setString(6, songId)
+            ps.setString(7, artistName)
             val rs = ps.executeQuery()
             if (rs.next()) {
                 CachedLyricsEntity(

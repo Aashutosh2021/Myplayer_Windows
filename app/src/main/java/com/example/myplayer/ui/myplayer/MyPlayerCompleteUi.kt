@@ -1,4 +1,4 @@
-﻿package com.example.myplayer.ui.myplayer
+package com.example.myplayer.ui.myplayer
 
 
 
@@ -182,7 +182,6 @@ import androidx.compose.ui.layout.onGloballyPositioned
 
 
 
-
 import com.example.myplayer.myplayerfx.audio.MyPlayerAudioTap
 
 
@@ -323,7 +322,7 @@ import kotlin.random.Random
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
@@ -331,7 +330,7 @@ import kotlin.random.Random
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
@@ -1504,7 +1503,7 @@ class MyPlayerUiStateHolder(context: Context) {
 
 
 
-/** Process-wide shared holder â€” every screen reads/writes the same instance,
+/** Process-wide shared holder — every screen reads/writes the same instance,
 
 
 
@@ -1552,7 +1551,7 @@ fun rememberMyPlayerUiStateHolder(): MyPlayerUiStateHolder {
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
@@ -1560,7 +1559,7 @@ fun rememberMyPlayerUiStateHolder(): MyPlayerUiStateHolder {
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
@@ -2260,7 +2259,7 @@ fun MyPlayerProfileIdCard(
 
 
 
-                    text = "$displayUser's CARD â€¢",
+                    text = "$displayUser's CARD •",
 
 
 
@@ -2312,7 +2311,7 @@ fun MyPlayerProfileIdCard(
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
@@ -2320,7 +2319,7 @@ fun MyPlayerProfileIdCard(
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
@@ -2416,7 +2415,7 @@ fun MyPlayerOnboardingFlow(
 
 
 
-    // Gated while the Spotify login dialog is open â€” the dialog handles its own back.
+    // Gated while the Spotify login dialog is open — the dialog handles its own back.
 
 
 
@@ -4792,31 +4791,31 @@ fun MyPlayerInteractiveFeatureTour(
 
 
 
-        "Step 1/7 â€¢ Open Appearance Settings",
+        "Step 1/7 • Open Appearance Settings",
 
 
 
-        "Step 2/7 â€¢ Open Customize Player",
+        "Step 2/7 • Open Customize Player",
 
 
 
-        "Step 3/7 â€¢ 6 Custom Now Playing Screens",
+        "Step 3/7 • 6 Custom Now Playing Screens",
 
 
 
-        "Step 4/7 â€¢ Open Audio Lab",
+        "Step 4/7 • Open Audio Lab",
 
 
 
-        "Step 5/7 â€¢ 10-Band Equalizer & AutoEQ",
+        "Step 5/7 • 10-Band Equalizer & AutoEQ",
 
 
 
-        "Step 6/7 â€¢ Real-Time Audio FX & Spatial Audio",
+        "Step 6/7 • Real-Time Audio FX & Spatial Audio",
 
 
 
-        "Step 7/7 â€¢ User Manual, Crossfade & Ready to Play!"
+        "Step 7/7 • User Manual, Crossfade & Ready to Play!"
 
 
 
@@ -4840,7 +4839,7 @@ fun MyPlayerInteractiveFeatureTour(
 
 
 
-        "Swipe karke apna favorite Now Playing style chuno â€” Radial (MyPlayer 3D Tilt + Neon Dial), Turntable Vinyl, Poster, Timeline ya Lyrics Stage!",
+        "Swipe karke apna favorite Now Playing style chuno — Radial (MyPlayer 3D Tilt + Neon Dial), Turntable Vinyl, Poster, Timeline ya Lyrics Stage!",
 
 
 
@@ -4904,7 +4903,7 @@ fun MyPlayerInteractiveFeatureTour(
 
 
 
-        // â”€â”€ TOP INTERACTIVE TOUR COACHMARK BANNER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── TOP INTERACTIVE TOUR COACHMARK BANNER ─────────────────────────────
 
 
 
@@ -4960,23 +4959,23 @@ fun MyPlayerInteractiveFeatureTour(
 
 
 
-                2 -> "Next: Audio Lab â†’"
+                2 -> "Next: Audio Lab →"
 
 
 
-                4 -> "Next: Audio FX â†’"
+                4 -> "Next: Audio FX →"
 
 
 
-                5 -> "Next: Final Step â†’"
+                5 -> "Next: Final Step →"
 
 
 
-                6 -> "Finish Tour & Start Listening ðŸŽµ"
+                6 -> "Finish Tour & Start Listening 🎵"
 
 
 
-                else -> "Next â†’"
+                else -> "Next →"
 
 
 
@@ -5052,7 +5051,7 @@ fun MyPlayerInteractiveFeatureTour(
 
 
 
-        // â”€â”€ INTERACTIVE TARGET SCREEN AREA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── INTERACTIVE TARGET SCREEN AREA ────────────────────────────────────
 
 
 
@@ -5080,7 +5079,7 @@ fun MyPlayerInteractiveFeatureTour(
 
 
 
-                        highlightBadgeText = "ðŸ‘† TAP TO OPEN APPEARANCE",
+                        highlightBadgeText = "👆 TAP TO OPEN APPEARANCE",
 
 
 
@@ -5156,7 +5155,7 @@ fun MyPlayerInteractiveFeatureTour(
 
 
 
-                            badgeText = "ðŸ‘† TAP TO OPEN PLAYER STYLES",
+                            badgeText = "👆 TAP TO OPEN PLAYER STYLES",
 
 
 
@@ -5224,7 +5223,7 @@ fun MyPlayerInteractiveFeatureTour(
 
 
 
-                                            "Active: ${myplayerState.playerStyle.title} â€¢ Tap to preview all 6 styles",
+                                            "Active: ${myplayerState.playerStyle.title} • Tap to preview all 6 styles",
 
 
 
@@ -5460,7 +5459,7 @@ fun MyPlayerInteractiveFeatureTour(
 
 
 
-                        highlightBadgeText = "ðŸ‘† TAP TO OPEN AUDIO LAB",
+                        highlightBadgeText = "👆 TAP TO OPEN AUDIO LAB",
 
 
 
@@ -5528,7 +5527,7 @@ fun MyPlayerInteractiveFeatureTour(
 
 
 
-                                badgeText = "ðŸ‘† TAP TO OPEN 10-BAND EQUALIZER",
+                                badgeText = "👆 TAP TO OPEN 10-BAND EQUALIZER",
 
 
 
@@ -5576,7 +5575,7 @@ fun MyPlayerInteractiveFeatureTour(
 
 
 
-                                            text = "â— 10-BAND GRAPH â€¢ SWEEP SLIDERS â€¢ AUTOEQ",
+                                            text = "● 10-BAND GRAPH • SWEEP SLIDERS • AUTOEQ",
 
 
 
@@ -5872,7 +5871,7 @@ fun MyPlayerInteractiveFeatureTour(
 
 
 
-                                    Text("âœ“ EXPLORED", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MyPlayerAccentGreen)
+                                    Text("✓ EXPLORED", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MyPlayerAccentGreen)
 
 
 
@@ -5920,7 +5919,7 @@ fun MyPlayerInteractiveFeatureTour(
 
 
 
-                                badgeText = "ðŸ‘† TAP TO OPEN REAL-TIME AUDIO FX",
+                                badgeText = "👆 TAP TO OPEN REAL-TIME AUDIO FX",
 
 
 
@@ -5968,7 +5967,7 @@ fun MyPlayerInteractiveFeatureTour(
 
 
 
-                                            text = "â— REVERB â€¢ SPATIAL AUDIO â€¢ DOLBY ATMOS â€¢ SLOWED+REVERB",
+                                            text = "● REVERB • SPATIAL AUDIO • DOLBY ATMOS • SLOWED+REVERB",
 
 
 
@@ -6096,7 +6095,7 @@ fun MyPlayerInteractiveFeatureTour(
 
 
 
-                // STEP 6: Final Step â€” Smart Crossfade, Playback & Tour Completion Summary
+                // STEP 6: Final Step — Smart Crossfade, Playback & Tour Completion Summary
 
 
 
@@ -6132,7 +6131,7 @@ fun MyPlayerInteractiveFeatureTour(
 
 
 
-                        Text("You're All Set! ðŸŽ‰", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = MyPlayerTextPrimary)
+                        Text("You're All Set! 🎉", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = MyPlayerTextPrimary)
 
 
 
@@ -6315,7 +6314,7 @@ fun MyPlayerInteractiveFeatureTour(
 
 
 
-                                            text = "EQ: ${if (myplayerState.eqEnabled) myplayerState.eqPreset.label else "Off"} â€¢ Spatial: ${if (myplayerState.spatialAudioEnabled) myplayerState.spatialMode else "Off"} â€¢ Reverb: ${if (myplayerState.reverbEnabled) myplayerState.reverbPreset else "Off"}",
+                                            text = "EQ: ${if (myplayerState.eqEnabled) myplayerState.eqPreset.label else "Off"} • Spatial: ${if (myplayerState.spatialAudioEnabled) myplayerState.spatialMode else "Off"} • Reverb: ${if (myplayerState.reverbEnabled) myplayerState.reverbPreset else "Off"}",
 
 
 
@@ -6515,7 +6514,7 @@ fun MyPlayerInteractiveFeatureTour(
 
 
 
-                                text = "Finish Tour & Start Listening ðŸŽµ",
+                                text = "Finish Tour & Start Listening 🎵",
 
 
 
@@ -6759,7 +6758,7 @@ private fun MyPlayerTourCoachmarkHeader(
 
 
 
-                    text = "Skip Tour âœ•",
+                    text = "Skip Tour ✕",
 
 
 
@@ -8259,7 +8258,7 @@ fun CrossfadeWaveformGraphic(
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
@@ -8291,7 +8290,7 @@ fun CrossfadeWaveformGraphic(
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
@@ -8451,7 +8450,7 @@ fun MyPlayerMultiStyleNowPlayingScreen(
 
 
 
-    // â”€â”€ Day/Night bridge: custom player styles flip with the app-wide theme â”€â”€
+    // ── Day/Night bridge: custom player styles flip with the app-wide theme ──
 
 
 
@@ -8595,7 +8594,7 @@ fun MyPlayerMultiStyleNowPlayingScreen(
 
 
 
-            else -> "No lyrics found â€¢ Tap to add lyrics"
+            else -> "No lyrics found • Tap to add lyrics"
 
 
 
@@ -9451,7 +9450,7 @@ fun MyPlayerMultiStyleNowPlayingScreen(
 
 
 
-        // â”€â”€ STYLE 1: YOUR COMPLETE SIGNATURE MYPLAYER RADIAL SCREEN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── STYLE 1: YOUR COMPLETE SIGNATURE MYPLAYER RADIAL SCREEN ──────────
 
 
 
@@ -9599,7 +9598,7 @@ fun MyPlayerMultiStyleNowPlayingScreen(
 
 
 
-                // â”€â”€ STYLE 2: MYPLAYER DEFAULT STYLE (01:10 - 01:13, 01:39) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                // ── STYLE 2: MYPLAYER DEFAULT STYLE (01:10 - 01:13, 01:39) ─────────────
 
 
 
@@ -10299,7 +10298,7 @@ fun MyPlayerMultiStyleNowPlayingScreen(
 
 
 
-                    // Bottom Frosted Lyrics Pill â€” shows live synced lyric line & opens Lyrics Sheet on tap!
+                    // Bottom Frosted Lyrics Pill — shows live synced lyric line & opens Lyrics Sheet on tap!
 
 
 
@@ -10443,7 +10442,7 @@ fun MyPlayerMultiStyleNowPlayingScreen(
 
 
 
-        // â”€â”€ STYLE 3: MYPLAYER TURNTABLE STYLE (FIXED CENTER ALIGNMENT & LYRICS) â”€
+        // ── STYLE 3: MYPLAYER TURNTABLE STYLE (FIXED CENTER ALIGNMENT & LYRICS) ─
 
 
 
@@ -11375,7 +11374,7 @@ fun MyPlayerMultiStyleNowPlayingScreen(
 
 
 
-                    // Bottom Lyrics Pill â€” shows live synced lyric line & opens Lyrics Sheet on tap!
+                    // Bottom Lyrics Pill — shows live synced lyric line & opens Lyrics Sheet on tap!
 
 
 
@@ -11527,7 +11526,7 @@ fun MyPlayerMultiStyleNowPlayingScreen(
 
 
 
-        // â”€â”€ STYLE 4: MYPLAYER POSTER STYLE (01:43 - 01:45, FIXED BOUNDS) â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── STYLE 4: MYPLAYER POSTER STYLE (01:43 - 01:45, FIXED BOUNDS) ────────
 
 
 
@@ -11995,7 +11994,7 @@ fun MyPlayerMultiStyleNowPlayingScreen(
 
 
 
-        // â”€â”€ STYLE 5 & 6: MYPLAYER TIMELINE & LYRICS STAGE (01:46 - 01:49) â”€â”€â”€â”€â”€â”€
+        // ── STYLE 5 & 6: MYPLAYER TIMELINE & LYRICS STAGE (01:46 - 01:49) ──────
 
 
 
@@ -13131,7 +13130,7 @@ fun MyPlayerPlayerStylesPickerScreen(
 
 
 
-                text = if (myplayerState.playerStyle == currentHighlighted) "Active âœ“" else "Set Style",
+                text = if (myplayerState.playerStyle == currentHighlighted) "Active ✓" else "Set Style",
 
 
 
@@ -13179,7 +13178,7 @@ fun MyPlayerPlayerStylesPickerScreen(
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
@@ -13187,7 +13186,7 @@ fun MyPlayerPlayerStylesPickerScreen(
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
@@ -14515,7 +14514,7 @@ fun MyPlayerMoodGenreCard(
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
@@ -14527,7 +14526,7 @@ fun MyPlayerMoodGenreCard(
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
@@ -14783,7 +14782,7 @@ fun MyPlayerEqualizerScreen(
 
 
 
-                            if (myplayerState.eqEnabled) "On â€¢ ${myplayerState.eqPreset.label}" else "Off",
+                            if (myplayerState.eqEnabled) "On • ${myplayerState.eqPreset.label}" else "Off",
 
 
 
@@ -15015,7 +15014,7 @@ fun MyPlayerEqualizerScreen(
 
 
 
-                        text = "â†» Reset",
+                        text = "↻ Reset",
 
 
 
@@ -15215,7 +15214,7 @@ fun MyPlayerEqualizerScreen(
 
 
 
-            // â”€â”€ TAB 1: GRAPH EDITOR (02:49 - 02:58) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // ── TAB 1: GRAPH EDITOR (02:49 - 02:58) ─────────────────────────
 
 
 
@@ -15375,7 +15374,7 @@ fun MyPlayerEqualizerScreen(
 
 
 
-                            "Drag a node to shape the sound â€¢ double-tap to reset",
+                            "Drag a node to shape the sound • double-tap to reset",
 
 
 
@@ -15411,7 +15410,7 @@ fun MyPlayerEqualizerScreen(
 
 
 
-            // â”€â”€ TAB 2: SWEEPABLE 10-BAND SLIDERS (02:59 - 03:21, 03:28) â”€â”€â”€â”€
+            // ── TAB 2: SWEEPABLE 10-BAND SLIDERS (02:59 - 03:21, 03:28) ────
 
 
 
@@ -15727,7 +15726,7 @@ fun MyPlayerEqualizerScreen(
 
 
 
-            // â”€â”€ TAB 3: AUTOEQ HEADPHONE DATABASE (03:22 - 03:27) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // ── TAB 3: AUTOEQ HEADPHONE DATABASE (03:22 - 03:27) ───────────
 
 
 
@@ -15843,7 +15842,7 @@ fun MyPlayerEqualizerScreen(
 
 
 
-                        Text("AutoEq â€¢ measured by reviewers", fontSize = 12.sp, color = MyPlayerTextSecondary)
+                        Text("AutoEq • measured by reviewers", fontSize = 12.sp, color = MyPlayerTextSecondary)
 
 
 
@@ -16815,7 +16814,7 @@ fun MyPlayerRainbowEqCanvas(
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
@@ -16823,7 +16822,7 @@ fun MyPlayerRainbowEqCanvas(
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
@@ -17283,7 +17282,7 @@ private fun formatMs(ms: Long): String {
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
@@ -17291,7 +17290,7 @@ private fun formatMs(ms: Long): String {
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
@@ -18427,7 +18426,7 @@ fun MyPlayerHeroNowPlayingBanner(
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
@@ -18435,7 +18434,7 @@ fun MyPlayerHeroNowPlayingBanner(
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
@@ -18759,15 +18758,15 @@ fun MyPlayerLibraryHeaderAndTabs(
 
 
 
-                            Color(0xFFFA2D48) to "â™ª",
+                            Color(0xFFFA2D48) to "♪",
 
 
 
-                            Color(0xFF1E1E24) to "â–",
+                            Color(0xFF1E1E24) to "❖",
 
 
 
-                            Color(0xFFFF0033) to "â–¶"
+                            Color(0xFFFF0033) to "▶"
 
 
 
@@ -19039,7 +19038,7 @@ private fun MyPlayerPlatformStatCard(name: String, count: Int, dotColor: Color, 
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
@@ -19047,7 +19046,7 @@ private fun MyPlayerPlatformStatCard(name: String, count: Int, dotColor: Color, 
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
@@ -20080,7 +20079,7 @@ fun MyPlayerAppearanceSettingsScreen(
 
 
 
-                            "Active: ${myplayerState.playerStyle.title} â€¢ Tap to switch (Radial, Turntable, Poster...)",
+                            "Active: ${myplayerState.playerStyle.title} • Tap to switch (Radial, Turntable, Poster...)",
 
 
 
@@ -20492,7 +20491,7 @@ fun MyPlayerAppearanceSettingsScreen(
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
@@ -20940,7 +20939,7 @@ fun MyPlayerAudioFxScreen(
 
 
 
-        // â”€â”€ TOP HEADER: "Audio / FX" + Tilted Active FX Card Stack (Screenshot match) â”€â”€
+        // ── TOP HEADER: "Audio / FX" + Tilted Active FX Card Stack (Screenshot match) ──
 
 
 
@@ -21392,7 +21391,7 @@ fun MyPlayerAudioFxScreen(
 
 
 
-        // â”€â”€ CARD 1: REVERB (Exact match to screenshot) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── CARD 1: REVERB (Exact match to screenshot) ───────────────────────
 
 
 
@@ -21924,7 +21923,7 @@ fun MyPlayerAudioFxScreen(
 
 
 
-        // â”€â”€ CARD 2: LOUDNESS & REPLAYGAIN (Exact match to screenshot) â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── CARD 2: LOUDNESS & REPLAYGAIN (Exact match to screenshot) ─────────
 
 
 
@@ -22452,7 +22451,7 @@ fun MyPlayerAudioFxScreen(
 
 
 
-        // â”€â”€ CARD 3: SPATIAL AUDIO (CROSSFEED & SPEAKERS - 00:29 - 00:38) â”€â”€â”€â”€â”€
+        // ── CARD 3: SPATIAL AUDIO (CROSSFEED & SPEAKERS - 00:29 - 00:38) ─────
 
 
 
@@ -22924,7 +22923,7 @@ fun MyPlayerAudioFxScreen(
 
 
 
-                            valueText = "Â±${speakerAngleDeg.roundToInt()}Â°",
+                            valueText = "±${speakerAngleDeg.roundToInt()}°",
 
 
 
@@ -22992,7 +22991,7 @@ fun MyPlayerAudioFxScreen(
 
 
 
-                            text = "Two virtual speakers in front of a modelled head; the far ear hears each one a little later and darker, as in a room. 30Â° is a studio pair.",
+                            text = "Two virtual speakers in front of a modelled head; the far ear hears each one a little later and darker, as in a room. 30° is a studio pair.",
 
 
 
@@ -23028,7 +23027,7 @@ fun MyPlayerAudioFxScreen(
 
 
 
-        // â”€â”€ CARD 4: MONO AUDIO (00:38 - 00:42) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── CARD 4: MONO AUDIO (00:38 - 00:42) ───────────────────────────────
 
 
 
@@ -23104,7 +23103,7 @@ fun MyPlayerAudioFxScreen(
 
 
 
-        // â”€â”€ CARD 5: DOLBY ATMOS & SURROUND (00:39 - 00:45) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── CARD 5: DOLBY ATMOS & SURROUND (00:39 - 00:45) ───────────────────
 
 
 
@@ -23356,7 +23355,7 @@ fun MyPlayerAudioFxScreen(
 
 
 
-        // â”€â”€ CARD 6: PLAYBACK SPEED (NORMAL | SLOWED | SLOWED + REVERB | NIGHTCORE - 00:46 - 00:56) â”€â”€
+        // ── CARD 6: PLAYBACK SPEED (NORMAL | SLOWED | SLOWED + REVERB | NIGHTCORE - 00:46 - 00:56) ──
 
 
 
@@ -23616,7 +23615,7 @@ fun MyPlayerAudioFxScreen(
 
 
 
-                                    text = "âˆ’",
+                                    text = "−",
 
 
 
@@ -23652,7 +23651,7 @@ fun MyPlayerAudioFxScreen(
 
 
 
-                                    text = "${"%.2f".format(myplayerState.playbackSpeed)}Ã—",
+                                    text = "${"%.2f".format(myplayerState.playbackSpeed)}×",
 
 
 
@@ -23736,7 +23735,7 @@ fun MyPlayerAudioFxScreen(
 
 
 
-                    val speedPresets = listOf("Normal", "Slowed", "Slowed + reverb", "Nightcore", "0.75Ã—", "1.25Ã—", "1.5Ã—", "2Ã—")
+                    val speedPresets = listOf("Normal", "Slowed", "Slowed + reverb", "Nightcore", "0.75×", "1.25×", "1.5×", "2×")
 
 
 
@@ -23884,19 +23883,19 @@ fun MyPlayerAudioFxScreen(
 
 
 
-                                        "0.75Ã—" -> { myplayerState.playbackSpeed = 0.75f; myplayerState.preservePitch = true }
+                                        "0.75×" -> { myplayerState.playbackSpeed = 0.75f; myplayerState.preservePitch = true }
 
 
 
-                                        "1.25Ã—" -> { myplayerState.playbackSpeed = 1.25f; myplayerState.preservePitch = true }
+                                        "1.25×" -> { myplayerState.playbackSpeed = 1.25f; myplayerState.preservePitch = true }
 
 
 
-                                        "1.5Ã—" -> { myplayerState.playbackSpeed = 1.50f; myplayerState.preservePitch = true }
+                                        "1.5×" -> { myplayerState.playbackSpeed = 1.50f; myplayerState.preservePitch = true }
 
 
 
-                                        "2Ã—" -> { myplayerState.playbackSpeed = 2.00f; myplayerState.preservePitch = true }
+                                        "2×" -> { myplayerState.playbackSpeed = 2.00f; myplayerState.preservePitch = true }
 
 
 
@@ -23972,7 +23971,7 @@ fun MyPlayerAudioFxScreen(
 
 
 
-                        valueText = "${"%.2f".format(myplayerState.playbackSpeed)}Ã—",
+                        valueText = "${"%.2f".format(myplayerState.playbackSpeed)}×",
 
 
 
@@ -24084,7 +24083,7 @@ fun MyPlayerAudioFxScreen(
 
 
 
-                        text = "â†» Reset",
+                        text = "↻ Reset",
 
 
 
@@ -24152,7 +24151,7 @@ fun MyPlayerAudioFxScreen(
 
 
 
-        // â”€â”€ CARD 7: EXPONENTIAL VOLUME (00:56 - 00:59) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── CARD 7: EXPONENTIAL VOLUME (00:56 - 00:59) ───────────────────────
 
 
 
@@ -24500,11 +24499,11 @@ private fun MyPlayerLabeledSlider(
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
-// AUDIO FX LIVE PICTURES Ã¢Â€Â” the Audio Lab live cards
+// AUDIO FX LIVE PICTURES â the Audio Lab live cards
 
 
 
@@ -24520,7 +24519,7 @@ private fun MyPlayerLabeledSlider(
 
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═════════════════════════════════════════════════════════════════════════════
 
 
 
@@ -24840,7 +24839,6 @@ private fun Modifier.myplayerTrackOnScreen(state: MutableState<Boolean>): Modifi
 
 
 
-    
 
 
 

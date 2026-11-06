@@ -21,6 +21,11 @@ interface SongDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     fun insertSongs(songs: List<SongEntity>): Unit
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSong(song: SongEntity): Unit {
+        insertSongs(listOf(song))
+    }
+
     @Query("DELETE FROM songs WHERE path LIKE :folderUri || '%'")
     fun deleteSongsByFolder(folderUri: String): Unit
 
@@ -35,7 +40,10 @@ interface SongDao {
 
     @Query("UPDATE songs SET path = :path WHERE id = :id")
     fun updateSongPath(id: String, path: String): Unit
-    
+
+    @Query("UPDATE songs SET albumArt = :albumArt WHERE id = :id")
+    suspend fun updateSongArtwork(id: String, albumArt: String): Unit {}
+
     @Query("SELECT * FROM songs WHERE title LIKE '%' || :query || '%' OR artist LIKE '%' || :query || '%' OR album LIKE '%' || :query || '%'")
     fun searchSongs(query: String): Flow<List<SongEntity>>
 
@@ -46,5 +54,5 @@ interface SongDao {
     suspend fun getSongByVideoId(videoId: String): SongEntity?
 
     @Query("UPDATE songs SET videoId = :videoId WHERE id = :id")
-    suspend fun updateSongVideoId(id: String, videoId: String): Unit
+    suspend fun updateSongVideoId(id: String, videoId: String): Unit {}
 }

@@ -4,12 +4,16 @@ import android.net.Uri
 
 object C {
     const val INDEX_UNSET = -1
+    const val LENGTH_UNSET = -1L
+    const val RESULT_END_OF_INPUT = -1
     const val TIME_UNSET = -9223372036854775807L
     const val AUDIO_CONTENT_TYPE_MUSIC = 2
     const val USAGE_MEDIA = 1
     const val WAKE_MODE_NETWORK = 1
     const val ENCODING_PCM_16BIT = 2
     const val ENCODING_PCM_FLOAT = 4
+    const val AUDIO_SESSION_ID_UNSET = 0
+    const val TRACK_TYPE_AUDIO = 1
 }
 
 class MediaMetadata {
@@ -32,18 +36,30 @@ class MediaItem {
     var mediaId: String = ""
     var mediaMetadata: MediaMetadata = MediaMetadata()
     var localConfiguration: LocalConfiguration? = null
+    var customCacheKey: String? = null
 
-    class LocalConfiguration(val uri: Uri)
+    class LocalConfiguration(val uri: Uri, val customCacheKey: String? = null)
 
     class Builder {
         private val item = MediaItem()
+        private var pendingUri: Uri? = null
+        private var pendingCacheKey: String? = null
+
         fun setMediaId(id: String): Builder { item.mediaId = id; return this }
         fun setUri(uri: String): Builder {
-            item.localConfiguration = LocalConfiguration(Uri.parse(uri))
+            pendingUri = Uri.parse(uri)
+            item.localConfiguration = LocalConfiguration(pendingUri!!, pendingCacheKey)
             return this
         }
         fun setUri(uri: Uri): Builder {
-            item.localConfiguration = LocalConfiguration(uri)
+            pendingUri = uri
+            item.localConfiguration = LocalConfiguration(uri, pendingCacheKey)
+            return this
+        }
+        fun setCustomCacheKey(customCacheKey: String?): Builder {
+            pendingCacheKey = customCacheKey
+            item.customCacheKey = customCacheKey
+            pendingUri?.let { item.localConfiguration = LocalConfiguration(it, customCacheKey) }
             return this
         }
         fun setMediaMetadata(metadata: MediaMetadata): Builder { item.mediaMetadata = metadata; return this }
@@ -131,6 +147,7 @@ class AudioAttributes {
 
 class PlayerId
 class AuxEffectInfo(val effectId: Int = 0, val sendLevel: Float = 0f)
+class Timeline
 
 interface Player {
     val currentMediaItem: MediaItem? get() = null
@@ -146,6 +163,8 @@ interface Player {
     var playbackParameters: PlaybackParameters get() = PlaybackParameters(); set(_) {}
     var repeatMode: Int get() = REPEAT_MODE_OFF; set(_) {}
     var shuffleModeEnabled: Boolean get() = false; set(_) {}
+    var skipSilenceEnabled: Boolean get() = false; set(_) {}
+    val audioSessionId: Int get() = 0
 
     fun play() {}
     fun pause() {}
@@ -208,6 +227,8 @@ interface Player {
         fun onPositionDiscontinuity(oldPos: PositionInfo, newPos: PositionInfo, reason: Int) {}
         fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {}
         fun onRepeatModeChanged(repeatMode: Int) {}
+        fun onTimelineChanged(timeline: Timeline, reason: Int) {}
+        fun onAudioSessionIdChanged(audioSessionId: Int) {}
     }
 
     class PositionInfo(val positionMs: Long)

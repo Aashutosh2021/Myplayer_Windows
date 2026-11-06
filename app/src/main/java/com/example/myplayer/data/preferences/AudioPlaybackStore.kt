@@ -1,9 +1,12 @@
 package com.example.myplayer.data.preferences
 
 import android.content.Context
-import androidx.datastore.preferences.core.MutablePreferences
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -13,7 +16,9 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.audioPlaybackDataStore by preferencesDataStore(name = "audio_playback_master_prefs")
+private val Context.audioPlaybackDataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "audio_playback_master_prefs"
+)
 
 enum class AudioQualityTier(
     val title: String,
@@ -27,13 +32,45 @@ enum class AudioQualityTier(
     CD_LOSSLESS("CD Lossless", "16-BIT / 44.1k", "16-bit / 44.1 kHz • Lossless CD FLAC", 6),
     STANDARD_320("Standard Quality", "320 kbps", "320 kbps • MP3 / AAC", 5),
     DATA_SAVER("Data Saver", "96 kbps", "96 kbps • High Efficiency AAC", 4),
-    YOUTUBE_MUSIC("YouTube Music", "YOUTUBE", "128-256 kbps • YouTube Music AAC / Opus stream", -1)
+    YOUTUBE_MUSIC("YouTube Music", "YOUTUBE", "128-256 kbps • YouTube Music AAC / Opus stream", -1);
+
+    val bitrateKbps: Int
+        get() = when (this) {
+            DATA_SAVER -> 96
+            STANDARD_320 -> 320
+            CD_LOSSLESS -> 1411
+            HI_RES_96 -> 4608
+            HI_RES_MAX -> 9216
+            DOLBY_ATMOS -> 4608
+            YOUTUBE_MUSIC -> 256
+        }
+
+    companion object {
+        val LOW get() = DATA_SAVER
+        val NORMAL get() = STANDARD_320
+        val HIGH get() = CD_LOSSLESS
+        val VERY_HIGH get() = STANDARD_320
+        val LOSSLESS get() = CD_LOSSLESS
+        val HI_RES_LOSSLESS get() = HI_RES_MAX
+    }
 }
 
 enum class LoudnessMode(val id: String, val title: String, val description: String) {
     OFF("off", "Off", "Play tracks at their original level"),
     TRACK("track", "Track", "Match every track to -14 LUFS (needs ReplayGain tags)"),
-    ALBUM("album", "Album", "Keep intentional album dynamics (falls back to track tags)")
+    ALBUM("album", "Album", "Keep intentional album dynamics (falls back to track tags)");
+
+    val targetLufs: Float
+        get() = when (this) {
+            OFF -> 0f
+            TRACK -> -14f
+            ALBUM -> -14f
+        }
+}
+
+enum class SpatialMode(val title: String, val description: String) {
+    SPEAKERS("Virtual 3D Speakers", "Simulates external stereo speakers ±30° in front of you"),
+    CROSSFEED("BS2B Crossfeed", "Blends binaural channels to eliminate headphone fatigue")
 }
 
 enum class ClarityOutputPreset(
@@ -50,7 +87,6 @@ enum class ClarityOutputPreset(
 }
 
 enum class Eq15Preset(val label: String, val gainsDb: FloatArray) {
-    // 15 Standard ISO 2/3-octave center frequencies: 25, 40, 63, 100, 160, 250, 400, 630, 1000, 1600, 2500, 4000, 6300, 10000, 16000 Hz
     DEFAULT("Default", floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f)),
     STUDIO_MASTER("Studio Master", floatArrayOf(2.6f, 2.8f, 2.2f, 0.6f, -1.8f, -2.6f, -1.2f, 0.0f, 1.2f, 2.4f, 3.6f, 4.0f, 4.2f, 4.5f, 4.8f)),
     ACOUSTIC("Acoustic", floatArrayOf(3.0f, 2.5f, 2.0f, 1.5f, 0.5f, 1.0f, 1.5f, 2.0f, 2.0f, 1.5f, 1.0f, 1.0f, 1.0f, 1.5f, 1.5f)),
@@ -62,7 +98,10 @@ enum class Eq15Preset(val label: String, val gainsDb: FloatArray) {
     TREBLE_AIR("Treble Air", floatArrayOf(0f, 0f, 0f, -0.5f, -0.5f, -0.5f, 0f, 0.5f, 1.0f, 1.5f, 2.0f, 3.0f, 3.5f, 4.5f, 5.0f)),
     DEEP_BASS_CLEAN("Deep Bass Clean", floatArrayOf(5.0f, 4.5f, 3.5f, 2.5f, 1.0f, 0f, -0.5f, -0.5f, 0f, 0f, 0f, 0f, 0.5f, 0.5f, 0.5f)),
     ELECTRONIC("Electronic", floatArrayOf(4.5f, 4.0f, 3.0f, 2.0f, 0.5f, -0.5f, 0f, 1.0f, 2.0f, 2.5f, 2.5f, 2.5f, 3.0f, 3.5f, 4.0f)),
-    RNB("R&B", floatArrayOf(5.0f, 4.5f, 3.5f, 2.0f, 1.0f, -0.5f, -1.0f, -0.5f, 0.5f, 1.5f, 2.0f, 2.5f, 3.0f, 3.0f, 3.0f))
+    RNB("R&B", floatArrayOf(5.0f, 4.5f, 3.5f, 2.0f, 1.0f, -0.5f, -1.0f, -0.5f, 0.5f, 1.5f, 2.0f, 2.5f, 3.0f, 3.0f, 3.0f)),
+    CUSTOM("Custom", floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f));
+
+    val displayName: String get() = label
 }
 
 data class AudioPlaybackState(
@@ -78,22 +117,33 @@ data class AudioPlaybackState(
     val softwareVolumeUsb: Boolean = false,
     val loudnessMode: LoudnessMode = LoudnessMode.OFF,
     val eqEnabled: Boolean = false,
-    val eqPreset: Eq15Preset = Eq15Preset.STUDIO_MASTER,
-    val eqBandGains: List<Float> = Eq15Preset.STUDIO_MASTER.gainsDb.toList(),
+    val eqPreset: Eq15Preset = Eq15Preset.DEFAULT,
+    val eqBandGains: List<Float> = Eq15Preset.DEFAULT.gainsDb.toList(),
     val systemAudioEffects: Boolean = false,
     val studioMasterClarity: Boolean = true,
     val clarityOutputPreset: ClarityOutputPreset = ClarityOutputPreset.REFERENCE,
-    val claritySpatialBypass: Boolean = false
+    val claritySpatialBypass: Boolean = false,
+    val dolbySurroundAtmos: Boolean = false,
+    val spatialAudioEnabled: Boolean = false,
+    val spatialMode: SpatialMode = SpatialMode.SPEAKERS,
+    val spatialSpeakerAngle: Float = 30f,
+    val spatialAmount: Float = 1.0f,
+
+    // Backwards-compatible aliases
+    val wifiQuality: AudioQualityTier = streamingQuality,
+    val mobileQuality: AudioQualityTier = streamingQuality,
+    val autoAdjustQuality: Boolean = false,
+    val gaplessPlayback: Boolean = true,
+    val automixEnabled: Boolean = true,
+    val skipSilence: Boolean = false,
+    val bitPerfectUsbDac: Boolean = bitPerfectMode
 )
 
 object AudioQualityFallbackHelper {
     fun getQualityFallbackChain(selectedTier: AudioQualityTier): List<AudioQualityTier> {
         return when (selectedTier) {
-            // Strictly plays YouTube Music as-is (never upgrades)
             AudioQualityTier.YOUTUBE_MUSIC -> listOf(AudioQualityTier.YOUTUBE_MUSIC)
             AudioQualityTier.DATA_SAVER -> listOf(AudioQualityTier.DATA_SAVER)
-
-            // Atmos -> Hi-Res Max -> Hi-Res 96 -> CD -> 320 kbps -> YouTube
             AudioQualityTier.DOLBY_ATMOS -> listOf(
                 AudioQualityTier.DOLBY_ATMOS,
                 AudioQualityTier.HI_RES_MAX,
@@ -102,8 +152,6 @@ object AudioQualityFallbackHelper {
                 AudioQualityTier.STANDARD_320,
                 AudioQualityTier.YOUTUBE_MUSIC
             )
-
-            // Hi-Res Max -> Hi-Res 96 -> CD -> 320 -> YouTube
             AudioQualityTier.HI_RES_MAX -> listOf(
                 AudioQualityTier.HI_RES_MAX,
                 AudioQualityTier.HI_RES_96,
@@ -111,20 +159,17 @@ object AudioQualityFallbackHelper {
                 AudioQualityTier.STANDARD_320,
                 AudioQualityTier.YOUTUBE_MUSIC
             )
-
             AudioQualityTier.HI_RES_96 -> listOf(
                 AudioQualityTier.HI_RES_96,
                 AudioQualityTier.CD_LOSSLESS,
                 AudioQualityTier.STANDARD_320,
                 AudioQualityTier.YOUTUBE_MUSIC
             )
-
             AudioQualityTier.CD_LOSSLESS -> listOf(
                 AudioQualityTier.CD_LOSSLESS,
                 AudioQualityTier.STANDARD_320,
                 AudioQualityTier.YOUTUBE_MUSIC
             )
-
             AudioQualityTier.STANDARD_320 -> listOf(
                 AudioQualityTier.STANDARD_320,
                 AudioQualityTier.YOUTUBE_MUSIC
@@ -150,6 +195,7 @@ class AudioPlaybackStore internal constructor(
         val DOWNLOAD_QUALITY = stringPreferencesKey("download_quality")
         val BIT_PERFECT = booleanPreferencesKey("bit_perfect")
         val CROSSFADE = booleanPreferencesKey("crossfade")
+        val CROSSFADE_SECONDS = intPreferencesKey("crossfade_seconds")
         val KEEP_AWAKE_LYRICS = booleanPreferencesKey("keep_awake_lyrics")
         val DOWNLOAD_LRC = booleanPreferencesKey("download_lrc")
         val USB_EXCLUSIVE = booleanPreferencesKey("usb_exclusive")
@@ -163,18 +209,33 @@ class AudioPlaybackStore internal constructor(
         val STUDIO_CLARITY = booleanPreferencesKey("studio_clarity")
         val CLARITY_PRESET = stringPreferencesKey("clarity_preset")
         val CLARITY_SPATIAL_BYPASS = booleanPreferencesKey("clarity_spatial_bypass")
+        val DOLBY_SURROUND_ATMOS = booleanPreferencesKey("dolby_surround_atmos")
+        val SPATIAL_AUDIO_ENABLED = booleanPreferencesKey("spatial_audio_enabled")
+        val SPATIAL_MODE = stringPreferencesKey("spatial_mode")
+        val SPATIAL_SPEAKER_ANGLE = floatPreferencesKey("spatial_speaker_angle")
+        val SPATIAL_AMOUNT = floatPreferencesKey("spatial_amount")
+
+        // Legacy keys
+        val WIFI_QUALITY = stringPreferencesKey("wifi_quality_tier")
+        val MOBILE_QUALITY = stringPreferencesKey("mobile_quality_tier")
+        val AUTO_ADJUST_QUALITY = booleanPreferencesKey("auto_adjust_quality")
+        val GAPLESS_PLAYBACK = booleanPreferencesKey("gapless_playback")
+        val AUTOMIX_ENABLED = booleanPreferencesKey("automix_enabled")
+        val SKIP_SILENCE = booleanPreferencesKey("skip_silence")
+        val BIT_PERFECT_USB = booleanPreferencesKey("bit_perfect_usb_dac")
     }
 
     val stateFlow: Flow<AudioPlaybackState> = dataStore?.data?.map { prefs ->
-        val preset = runCatching { Eq15Preset.valueOf(prefs[Keys.EQ_PRESET] ?: "STUDIO_MASTER") }.getOrDefault(Eq15Preset.STUDIO_MASTER)
+        val preset = runCatching { Eq15Preset.valueOf(prefs[Keys.EQ_PRESET] ?: "DEFAULT") }.getOrDefault(Eq15Preset.DEFAULT)
         val savedBands = prefs[Keys.EQ_BANDS_CSV]?.split(",")?.mapNotNull { it.toFloatOrNull() }
             ?.takeIf { it.size == 15 } ?: preset.gainsDb.toList()
 
         AudioPlaybackState(
-            streamingQuality = runCatching { AudioQualityTier.valueOf(prefs[Keys.STREAM_QUALITY] ?: "DOLBY_ATMOS") }.getOrDefault(AudioQualityTier.DOLBY_ATMOS),
+            streamingQuality = runCatching { AudioQualityTier.valueOf(prefs[Keys.STREAM_QUALITY] ?: prefs[Keys.WIFI_QUALITY] ?: "DOLBY_ATMOS") }.getOrDefault(AudioQualityTier.DOLBY_ATMOS),
             downloadQuality = runCatching { AudioQualityTier.valueOf(prefs[Keys.DOWNLOAD_QUALITY] ?: "DOLBY_ATMOS") }.getOrDefault(AudioQualityTier.DOLBY_ATMOS),
-            bitPerfectMode = prefs[Keys.BIT_PERFECT] ?: false,
+            bitPerfectMode = prefs[Keys.BIT_PERFECT] ?: prefs[Keys.BIT_PERFECT_USB] ?: false,
             crossfadeEnabled = prefs[Keys.CROSSFADE] ?: false,
+            crossfadeSeconds = prefs[Keys.CROSSFADE_SECONDS] ?: 6,
             keepScreenAwakeLyrics = prefs[Keys.KEEP_AWAKE_LYRICS] ?: false,
             downloadSyncedLyrics = prefs[Keys.DOWNLOAD_LRC] ?: true,
             usbExclusiveOutput = prefs[Keys.USB_EXCLUSIVE] ?: false,
@@ -187,49 +248,131 @@ class AudioPlaybackStore internal constructor(
             systemAudioEffects = prefs[Keys.SYSTEM_FX] ?: false,
             studioMasterClarity = prefs[Keys.STUDIO_CLARITY] ?: true,
             clarityOutputPreset = runCatching { ClarityOutputPreset.valueOf(prefs[Keys.CLARITY_PRESET] ?: "REFERENCE") }.getOrDefault(ClarityOutputPreset.REFERENCE),
-            claritySpatialBypass = prefs[Keys.CLARITY_SPATIAL_BYPASS] ?: false
+            claritySpatialBypass = prefs[Keys.CLARITY_SPATIAL_BYPASS] ?: false,
+            dolbySurroundAtmos = prefs[Keys.DOLBY_SURROUND_ATMOS] ?: false,
+            spatialAudioEnabled = prefs[Keys.SPATIAL_AUDIO_ENABLED] ?: false,
+            spatialMode = runCatching { SpatialMode.valueOf(prefs[Keys.SPATIAL_MODE] ?: "SPEAKERS") }.getOrDefault(SpatialMode.SPEAKERS),
+            spatialSpeakerAngle = prefs[Keys.SPATIAL_SPEAKER_ANGLE] ?: 30f,
+            spatialAmount = prefs[Keys.SPATIAL_AMOUNT] ?: 1.0f
         )
     } ?: flowOf(AudioPlaybackState())
 
-    suspend fun update(transform: (MutablePreferences) -> Unit) {
-        dataStore?.edit(transform)
+    suspend fun setStreamingQuality(tier: AudioQualityTier) {
+        dataStore?.edit { it[Keys.STREAM_QUALITY] = tier.name }
     }
 
-    suspend fun setStreamingQuality(tier: AudioQualityTier) = update { it[Keys.STREAM_QUALITY] = tier.name }
-    suspend fun setDownloadQuality(tier: AudioQualityTier) = update { it[Keys.DOWNLOAD_QUALITY] = tier.name }
-    suspend fun setBitPerfect(enabled: Boolean) = update {
-        it[Keys.BIT_PERFECT] = enabled
-        if (!enabled) it[Keys.USB_EXCLUSIVE] = false
+    suspend fun setDownloadQuality(tier: AudioQualityTier) {
+        dataStore?.edit { it[Keys.DOWNLOAD_QUALITY] = tier.name }
     }
-    suspend fun setCrossfade(enabled: Boolean) = update { it[Keys.CROSSFADE] = enabled }
-    suspend fun setKeepAwakeLyrics(enabled: Boolean) = update { it[Keys.KEEP_AWAKE_LYRICS] = enabled }
-    suspend fun setDownloadSyncedLyrics(enabled: Boolean) = update { it[Keys.DOWNLOAD_LRC] = enabled }
-    suspend fun setUsbExclusive(enabled: Boolean) = update {
-        it[Keys.USB_EXCLUSIVE] = enabled
-        if (enabled) it[Keys.BIT_PERFECT] = true
+
+    suspend fun setBitPerfect(enabled: Boolean) {
+        dataStore?.edit {
+            it[Keys.BIT_PERFECT] = enabled
+            if (!enabled) it[Keys.USB_EXCLUSIVE] = false
+        }
     }
-    suspend fun setInternalDirect(enabled: Boolean) = update { it[Keys.INTERNAL_DIRECT] = enabled }
-    suspend fun setSoftwareVolumeUsb(enabled: Boolean) = update { it[Keys.SW_VOLUME_USB] = enabled }
-    suspend fun setLoudnessMode(mode: LoudnessMode) = update { it[Keys.LOUDNESS_MODE] = mode.name }
-    suspend fun setEqEnabled(enabled: Boolean) = update { it[Keys.EQ_ENABLED] = enabled }
-    suspend fun setEqPreset(preset: Eq15Preset) = update {
-        it[Keys.EQ_PRESET] = preset.name
-        it[Keys.EQ_BANDS_CSV] = preset.gainsDb.joinToString(",")
-        // Picking a preset must audibly apply it, even if the EQ switch was off before.
-        it[Keys.EQ_ENABLED] = true
+
+    suspend fun setCrossfade(enabled: Boolean, seconds: Int = 6) {
+        dataStore?.edit {
+            it[Keys.CROSSFADE] = enabled
+            it[Keys.CROSSFADE_SECONDS] = seconds.coerceIn(1, 12)
+        }
     }
-    suspend fun setEqBandGain(index: Int, gainDb: Float, currentBands: List<Float>) = update {
-        if (index !in 0..14) return@update
-        // Read the freshest saved bands inside the transaction; the passed list may be stale
-        // when several slider events arrive before DataStore has emitted the previous write.
-        val stored = it[Keys.EQ_BANDS_CSV]?.split(",")?.mapNotNull { v -> v.toFloatOrNull() }
-            ?.takeIf { l -> l.size == 15 }
-        val base = stored ?: currentBands.takeIf { l -> l.size == 15 } ?: List(15) { 0f }
-        val updated = base.toMutableList().apply { this[index] = gainDb.coerceIn(-8f, 8f) }
-        it[Keys.EQ_BANDS_CSV] = updated.joinToString(",")
+
+    suspend fun setKeepAwakeLyrics(enabled: Boolean) {
+        dataStore?.edit { it[Keys.KEEP_AWAKE_LYRICS] = enabled }
     }
-    suspend fun setSystemAudioEffects(enabled: Boolean) = update { it[Keys.SYSTEM_FX] = enabled }
-    suspend fun setStudioMasterClarity(enabled: Boolean) = update { it[Keys.STUDIO_CLARITY] = enabled }
-    suspend fun setClarityOutputPreset(preset: ClarityOutputPreset) = update { it[Keys.CLARITY_PRESET] = preset.name }
-    suspend fun setClaritySpatialBypass(enabled: Boolean) = update { it[Keys.CLARITY_SPATIAL_BYPASS] = enabled }
+
+    suspend fun setDownloadSyncedLyrics(enabled: Boolean) {
+        dataStore?.edit { it[Keys.DOWNLOAD_LRC] = enabled }
+    }
+
+    suspend fun setUsbExclusive(enabled: Boolean) {
+        dataStore?.edit {
+            it[Keys.USB_EXCLUSIVE] = enabled
+            if (enabled) it[Keys.BIT_PERFECT] = true
+        }
+    }
+
+    suspend fun setInternalDirect(enabled: Boolean) {
+        dataStore?.edit { it[Keys.INTERNAL_DIRECT] = enabled }
+    }
+
+    suspend fun setSoftwareVolumeUsb(enabled: Boolean) {
+        dataStore?.edit { it[Keys.SW_VOLUME_USB] = enabled }
+    }
+
+    suspend fun setLoudnessMode(mode: LoudnessMode) {
+        dataStore?.edit { it[Keys.LOUDNESS_MODE] = mode.name }
+    }
+
+    suspend fun setEqEnabled(enabled: Boolean) {
+        dataStore?.edit { it[Keys.EQ_ENABLED] = enabled }
+    }
+
+    suspend fun setEqPreset(preset: Eq15Preset) {
+        dataStore?.edit {
+            it[Keys.EQ_PRESET] = preset.name
+            it[Keys.EQ_BANDS_CSV] = preset.gainsDb.joinToString(",")
+            it[Keys.EQ_ENABLED] = true
+        }
+    }
+
+    suspend fun setEqBandGain(bandIndex: Int, gainDb: Float, currentBands: List<Float>) {
+        if (bandIndex !in 0 until 15) return
+        dataStore?.edit {
+            val stored = it[Keys.EQ_BANDS_CSV]?.split(",")?.mapNotNull { v -> v.toFloatOrNull() }
+                ?.takeIf { l -> l.size == 15 }
+            val base = stored ?: currentBands.takeIf { l -> l.size == 15 } ?: List(15) { 0f }
+            val updated = base.toMutableList().apply { this[bandIndex] = gainDb.coerceIn(-12f, 12f) }
+            it[Keys.EQ_PRESET] = Eq15Preset.CUSTOM.name
+            it[Keys.EQ_BANDS_CSV] = updated.joinToString(",")
+        }
+    }
+
+    suspend fun setSystemAudioEffects(enabled: Boolean) {
+        dataStore?.edit { it[Keys.SYSTEM_FX] = enabled }
+    }
+
+    suspend fun setStudioMasterClarity(enabled: Boolean) {
+        dataStore?.edit { it[Keys.STUDIO_CLARITY] = enabled }
+    }
+
+    suspend fun setClarityOutputPreset(preset: ClarityOutputPreset) {
+        dataStore?.edit { it[Keys.CLARITY_PRESET] = preset.name }
+    }
+
+    suspend fun setClaritySpatialBypass(bypass: Boolean) {
+        dataStore?.edit { it[Keys.CLARITY_SPATIAL_BYPASS] = bypass }
+    }
+
+    suspend fun setDolbySurroundAtmos(enabled: Boolean) {
+        dataStore?.edit { it[Keys.DOLBY_SURROUND_ATMOS] = enabled }
+    }
+
+    suspend fun setSpatialAudioEnabled(enabled: Boolean) {
+        dataStore?.edit { it[Keys.SPATIAL_AUDIO_ENABLED] = enabled }
+    }
+
+    suspend fun setSpatialMode(mode: SpatialMode) {
+        dataStore?.edit { it[Keys.SPATIAL_MODE] = mode.name }
+    }
+
+    suspend fun setSpatialSpeakerAngle(angleDeg: Float) {
+        dataStore?.edit { it[Keys.SPATIAL_SPEAKER_ANGLE] = angleDeg.coerceIn(10f, 60f) }
+    }
+
+    suspend fun setSpatialAmount(amount: Float) {
+        dataStore?.edit { it[Keys.SPATIAL_AMOUNT] = amount.coerceIn(0f, 1f) }
+    }
+
+    // Compatibility methods
+    suspend fun setWifiQuality(tier: AudioQualityTier) = setStreamingQuality(tier)
+    suspend fun setMobileQuality(tier: AudioQualityTier) = setStreamingQuality(tier)
+    suspend fun setAutoAdjustQuality(enabled: Boolean) { dataStore?.edit { it[Keys.AUTO_ADJUST_QUALITY] = enabled } }
+    suspend fun setGaplessPlayback(enabled: Boolean) { dataStore?.edit { it[Keys.GAPLESS_PLAYBACK] = enabled } }
+    suspend fun setAutomixEnabled(enabled: Boolean) { dataStore?.edit { it[Keys.AUTOMIX_ENABLED] = enabled } }
+    suspend fun setSkipSilence(enabled: Boolean) { dataStore?.edit { it[Keys.SKIP_SILENCE] = enabled } }
+    suspend fun setBitPerfectUsbDac(enabled: Boolean) = setBitPerfect(enabled)
+    suspend fun setKeepScreenAwakeLyrics(enabled: Boolean) = setKeepAwakeLyrics(enabled)
 }

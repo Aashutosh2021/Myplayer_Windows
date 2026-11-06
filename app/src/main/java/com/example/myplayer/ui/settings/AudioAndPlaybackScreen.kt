@@ -5,6 +5,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
@@ -46,13 +48,14 @@ import com.example.myplayer.ui.components.ClayIconButton
 import com.example.myplayer.ui.theme.*
 import kotlinx.coroutines.launch
 
-private enum class SubScreen { MAIN, STREAMING_QUALITY, DOWNLOAD_QUALITY, EQUALIZER_15 }
+private enum class SubScreen { MAIN, STREAMING_QUALITY, DOWNLOAD_QUALITY, EQUALIZER_15, AUDIO_LAB }
 
 @Composable
 fun AudioAndPlaybackScreen(
     store: AudioPlaybackStore,
     featureManagers: AudioFeatureManagers,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    myplayerState: com.example.myplayer.ui.myplayer.MyPlayerUiStateHolder? = null
 ) {
     val state by store.stateFlow.collectAsState(initial = AudioPlaybackState())
     val scope = rememberCoroutineScope()
@@ -61,7 +64,12 @@ fun AudioAndPlaybackScreen(
     var currentSubScreen by remember { mutableStateOf(SubScreen.MAIN) }
     var showLoudnessDialog by remember { mutableStateOf(false) }
     var showClarityPresetDialog by remember { mutableStateOf(false) }
+    var showSpatialDialog by remember { mutableStateOf(false) }
     var isBatteryUnrestricted by remember { mutableStateOf(featureManagers.isBatteryUnrestricted()) }
+
+    androidx.activity.compose.BackHandler(enabled = currentSubScreen != SubScreen.MAIN) {
+        currentSubScreen = SubScreen.MAIN
+    }
 
     when (currentSubScreen) {
         SubScreen.STREAMING_QUALITY -> {
@@ -93,6 +101,14 @@ fun AudioAndPlaybackScreen(
                 onSelectPreset = { scope.launch { store.setEqPreset(it) } },
                 onBandChange = { idx, db -> scope.launch { store.setEqBandGain(idx, db, state.eqBandGains) } },
                 onReset = { scope.launch { store.setEqPreset(Eq15Preset.DEFAULT) } },
+                onBack = { currentSubScreen = SubScreen.MAIN }
+            )
+            return
+        }
+        SubScreen.AUDIO_LAB -> {
+            val stateHolder = myplayerState ?: com.example.myplayer.ui.myplayer.rememberMyPlayerUiStateHolder()
+            com.example.myplayer.ui.myplayer.MyPlayerAudioFxScreen(
+                myplayerState = stateHolder,
                 onBack = { currentSubScreen = SubScreen.MAIN }
             )
             return
@@ -217,7 +233,6 @@ fun AudioAndPlaybackScreen(
                     subtitle = if (isBatteryUnrestricted) "Unrestricted • Exempt from background killer"
                     else "Restricted • Tap to exempt from background kill",
                     onClick = {
-                        // shortcut: desktop battery-exemption intent is inert (no OS throttling); upgrade when a desktop per-app power regime exists.
                         runCatching { context.startActivity(featureManagers.buildBatteryExemptionIntent()) }
                         isBatteryUnrestricted = featureManagers.isBatteryUnrestricted()
                     }
@@ -287,6 +302,16 @@ fun AudioAndPlaybackScreen(
                 )
             }
 
+            // 12b. Audio Lab & Effects
+            item {
+                SettingsRowNav(
+                    icon = Icons.Default.Tune,
+                    title = "Audio Lab & Effects",
+                    subtitle = "Reverb, Spatial Audio, Loudness Boost, Speed & Pitch",
+                    onClick = { currentSubScreen = SubScreen.AUDIO_LAB }
+                )
+            }
+
             // 13. System Audio Effects
             item {
                 SettingsRowToggle(
@@ -295,6 +320,29 @@ fun AudioAndPlaybackScreen(
                     subtitle = "Let Dolby / system equalizer process audio",
                     checked = state.systemAudioEffects,
                     onCheckedChange = { scope.launch { store.setSystemAudioEffects(it) } }
+                )
+            }
+
+            // 13b. Dolby Atmos & 3D Surround
+            item {
+                SettingsRowToggle(
+                    icon = Icons.Default.SurroundSound,
+                    title = "Dolby Atmos & 3D Surround",
+                    subtitle = if (state.dolbySurroundAtmos) "Active • Multichannel 5.1/7.1 Atmos binaural virtualizer"
+                    else "Off • Standard stereo downmix",
+                    checked = state.dolbySurroundAtmos,
+                    onCheckedChange = { scope.launch { store.setDolbySurroundAtmos(it) } }
+                )
+            }
+
+            // 13c. Headphone Spatial Audio & Soundstage
+            item {
+                SettingsRowNav(
+                    icon = Icons.Default.Hearing,
+                    title = "Headphone Spatial Audio (3D Soundstage)",
+                    subtitle = if (state.spatialAudioEnabled) "Active • ${state.spatialMode.title} • ${(state.spatialAmount * 100).toInt()}%"
+                    else "Off • Natural headphone stereo",
+                    onClick = { showSpatialDialog = true }
                 )
             }
 
@@ -450,6 +498,134 @@ fun AudioAndPlaybackScreen(
                     }
                     TextButton(
                         onClick = { showClarityPresetDialog = false },
+                        modifier = Modifier.align(Alignment.End),
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Text("Done", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+
+    // 3D SPATIAL AUDIO DIALOG
+    if (showSpatialDialog) {
+        Dialog(onDismissRequest = { showSpatialDialog = false }) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Text(
+                        "3D Spatial Audio\n& Soundstage",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Text(
+                        "Projects headphone audio outside your head using Brown & Duda's spherical head model, eliminating in-head fatigue.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Enable Spatial Audio",
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Switch(
+                            checked = state.spatialAudioEnabled,
+                            onCheckedChange = { scope.launch { store.setSpatialAudioEnabled(it) } }
+                        )
+                    }
+
+                    HorizontalDivider()
+
+                    Text(
+                        "Virtualization Mode",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    SpatialMode.entries.forEach { mode ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { scope.launch { store.setSpatialMode(mode) } }
+                                .padding(vertical = 8.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = state.spatialMode == mode,
+                                onClick = { scope.launch { store.setSpatialMode(mode) } }
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    mode.title,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    mode.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    if (state.spatialMode == SpatialMode.SPEAKERS) {
+                        HorizontalDivider()
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Virtual Speaker Angle", style = MaterialTheme.typography.labelMedium)
+                            Text(
+                                "±${state.spatialSpeakerAngle.toInt()}°",
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Slider(
+                            value = state.spatialSpeakerAngle,
+                            onValueChange = { scope.launch { store.setSpatialSpeakerAngle(it) } },
+                            valueRange = 15f..60f,
+                            steps = 9
+                        )
+                    }
+
+                    HorizontalDivider()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Spatial Intensity", style = MaterialTheme.typography.labelMedium)
+                        Text(
+                            "${(state.spatialAmount * 100).toInt()}%",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Slider(
+                        value = state.spatialAmount,
+                        onValueChange = { scope.launch { store.setSpatialAmount(it) } },
+                        valueRange = 0f..1f
+                    )
+
+                    TextButton(
+                        onClick = { showSpatialDialog = false },
                         modifier = Modifier.align(Alignment.End),
                         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)
                     ) {
@@ -872,7 +1048,6 @@ private fun MyPlayerVerticalFader(
     onGainChange: (Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // shortcut: desktop Compose haptics are a silent no-op; upgrade when an OS feedback channel is wired.
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val normalized = ((gainDb + 8f) / 16f).coerceIn(0f, 1f)
     val latestGain by rememberUpdatedState(gainDb)

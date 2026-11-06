@@ -2,6 +2,7 @@ package com.example.myplayer.di
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
+import com.example.myplayer.data.backup.RedownloadQueueWorker
 import com.example.myplayer.data.local.AppDatabase
 import com.example.myplayer.data.local.DesktopAppDatabase
 import com.example.myplayer.data.local.dao.*
@@ -9,6 +10,8 @@ import com.example.myplayer.data.local.datastore.SettingsDataStore
 import com.example.myplayer.data.online.InnertubeApi
 import com.example.myplayer.data.repository.*
 import com.example.myplayer.playback.*
+import com.example.myplayer.playback.dsp.SpatialAudioProcessor
+import com.example.myplayer.playback.dsp.SpatialParams
 import com.example.myplayer.security.NetworkSecurityManager
 import com.example.myplayer.security.StringEncryptionManager
 import kotlinx.coroutines.CoroutineScope
@@ -253,20 +256,19 @@ object AppContainer {
         )
         register(com.example.myplayer.sync.SyncPlayManager::class.java, syncPlayManager)
 
-        // ===== Master audio, Spotify & Listen-Together wiring (ported from Android) =====
-        // Desktop never constructs MusicService (the shim Context's startService is a no-op),
-        // so Android MusicService.initAudioFeatureManagers()' wiring lives here instead.
+        // ===== Master audio, 3D Spatial / Atmos, Spotify & Listen-Together wiring =====
         val audioPlaybackStore = com.example.myplayer.data.preferences.AudioPlaybackStore(appContext)
         register(com.example.myplayer.data.preferences.AudioPlaybackStore::class.java, audioPlaybackStore)
 
-        register(com.example.myplayer.playback.dsp.MasterAudioDspProcessor::class.java, com.example.myplayer.playback.dsp.MasterAudioDspProcessor())
-        register(com.example.myplayer.playback.dsp.LastWaveDspAudioProcessor::class.java, com.example.myplayer.playback.dsp.LastWaveDspAudioProcessor())
+        val centralDsp = com.example.myplayer.playback.dsp.MasterAudioDspProcessor()
+        val centralLastWave = com.example.myplayer.playback.dsp.LastWaveDspAudioProcessor()
+        val centralSpatial = SpatialAudioProcessor()
+        register(com.example.myplayer.playback.dsp.MasterAudioDspProcessor::class.java, centralDsp)
+        register(com.example.myplayer.playback.dsp.LastWaveDspAudioProcessor::class.java, centralLastWave)
+        register(SpatialAudioProcessor::class.java, centralSpatial)
 
         val audioFeatureManagers = com.example.myplayer.playback.AudioFeatureManagers(okHttpClient)
         register(com.example.myplayer.playback.AudioFeatureManagers::class.java, audioFeatureManagers)
-
-        val centralDsp = resolveDependency(com.example.myplayer.playback.dsp.MasterAudioDspProcessor::class.java) as com.example.myplayer.playback.dsp.MasterAudioDspProcessor
-        val centralLastWave = resolveDependency(com.example.myplayer.playback.dsp.LastWaveDspAudioProcessor::class.java) as com.example.myplayer.playback.dsp.LastWaveDspAudioProcessor
 
         // Crossfade engine — attached to the shared MediaController shim, which drives
         // DesktopAudioBackend (the audible VLC output).
@@ -281,11 +283,20 @@ object AppContainer {
             println("[AppContainer] Crossfade monitor unavailable: ${e.message}")
         }
 
-        // 15-band EQ + store loudness -> VLC DSP bridge; legacy loudness boost feeds preamp.
+        // 15-band EQ + 3D Spatial / Dolby Atmos + store loudness -> VLC DSP bridge
         scope.launch {
             audioPlaybackStore.stateFlow.collect { state ->
                 masterAudioState = state
                 centralDsp.updateState(state)
+                centralSpatial.updateParams(
+                    SpatialParams(
+                        enabled = state.spatialAudioEnabled && !state.claritySpatialBypass,
+                        mode = state.spatialMode,
+                        speakerAngle = state.spatialSpeakerAngle,
+                        amount = state.spatialAmount,
+                        surround = state.dolbySurroundAtmos && !state.claritySpatialBypass
+                    )
+                )
                 applyMasterDsp()
             }
         }
@@ -328,15 +339,15 @@ object AppContainer {
         val onlineSearchRepository = com.example.myplayer.data.repository.OnlineSearchRepository(innertubeApi, db.recentSearchDao())
         register(com.example.myplayer.data.repository.OnlineSearchRepository::class.java, onlineSearchRepository)
 
-        val lyricsRepository = com.example.myplayer.data.lyrics.LyricsRepository(okHttpClient, db.cachedLyricsDao())
+        val lyricsRepository = com.example.myplayer.data.lyrics.LyricsRepository(appContext, okHttpClient, db.cachedLyricsDao())
         register(com.example.myplayer.data.lyrics.LyricsRepository::class.java, lyricsRepository)
 
         val hybridLibraryRepository = com.example.myplayer.data.repository.HybridLibraryRepository(db.downloadedSongDao(), db.songDao())
         register(com.example.myplayer.data.repository.HybridLibraryRepository::class.java, hybridLibraryRepository)
 
-        // Last: the audio backend wires VLC's callback output to the DSP chain, which resolves
-        // AudioFxService / MasterAudioDspProcessor — all DSP singletons must be registered first
-        // so the chain sees the same instances the settings collectors feed.
+        // Resume any pending sequential backup redownloads in the background
+        RedownloadQueueWorker.resumeIfPending(appContext)
+
         try {
             com.example.myplayer.playback.DesktopAudioBackend.init()
         } catch (e: Throwable) {

@@ -1,5 +1,9 @@
 package com.example.myplayer.data.artwork
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.net.Uri
 import android.util.Log
 import com.example.myplayer.data.artwork.cache.ArtworkCache
 import com.example.myplayer.data.artwork.matching.ArtworkMatcher
@@ -10,6 +14,7 @@ import com.example.myplayer.data.artwork.provider.YouTubeMusicArtworkProvider
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -49,6 +54,18 @@ class ArtworkRepository @Inject constructor(
 
         // Return immediately if local or pre-existing artwork URI is provided (<1ms)
         if (!localArtworkUri.isNullOrBlank()) {
+            // Check if a downloaded local poster exists in ~/.myplayer/files/artwork/<videoId>.jpg
+            extractYoutubeIdFromThumbnail(localArtworkUri)?.let { ytId ->
+                val localArt = File(File(Context.DEFAULT.filesDir, "artwork"), "$ytId.jpg")
+                if (localArt.exists() && localArt.length() > 512L) {
+                    return ArtworkResult(
+                        url = Uri.fromFile(localArt).toString(),
+                        provider = "Local",
+                        width = 0,
+                        height = 0
+                    )
+                }
+            }
             return ArtworkResult(
                 url = upgradeThumbnailIfNeeded(localArtworkUri),
                 provider = "Local",
@@ -57,7 +74,6 @@ class ArtworkRepository @Inject constructor(
             )
         }
 
-        // If both title and artist are missing, return local/fallback URI immediately
         if (cleanTitle.isBlank() && cleanArtist.isBlank()) {
             return null
         }
@@ -74,7 +90,12 @@ class ArtworkRepository @Inject constructor(
             }
         }
 
-        // 3. Deduplicate in-flight requests and query external providers (Deezer -> iTunes -> YouTube Music)
+        // 3. If offline, do not query external providers or write negative cache entries
+        if (!isOnline()) {
+            return null
+        }
+
+        // 4. Deduplicate in-flight requests and query external providers (Deezer -> iTunes -> YouTube Music)
         val deferred = inFlightRequests.computeIfAbsent(cacheKey) {
             scope.async {
                 fetchFromProviders(cleanTitle, cleanArtist, album, cacheKey)
@@ -87,9 +108,24 @@ class ArtworkRepository @Inject constructor(
             inFlightRequests.remove(cacheKey)
         }
 
-        // 4. Return HD result or fall back to local/fallback URI
         return result ?: localArtworkUri?.takeIf { it.isNotBlank() }?.let {
             ArtworkResult(url = it, provider = "Local", width = 0, height = 0)
+        }
+    }
+
+    private fun extractYoutubeIdFromThumbnail(url: String): String? {
+        val match = Regex("""/vi/([a-zA-Z0-9_-]{11})/""").find(url)
+        return match?.groupValues?.getOrNull(1)
+    }
+
+    private fun isOnline(): Boolean {
+        return try {
+            val cm = Context.DEFAULT.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return true
+            val net = cm.activeNetwork ?: return false
+            val caps = cm.getNetworkCapabilities(net) ?: return false
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        } catch (_: Exception) {
+            true
         }
     }
 
@@ -129,12 +165,14 @@ class ArtworkRepository @Inject constructor(
                 Log.w(TAG, "Provider ${provider.name} failed for $artist - $title: ${e.message}")
             }
         }
-        // Negative cache when all fail
-        cache.putNotFound(cacheKey, title, artist)
+        if (isOnline()) {
+            cache.putNotFound(cacheKey, title, artist)
+        }
         return null
     }
 
     suspend fun prefetchBatch(items: List<Pair<String, String>>) = withContext(Dispatchers.IO) {
+        if (!isOnline()) return@withContext emptyList()
         items.map { (title, artist) ->
             async {
                 prefetchSemaphore.withPermit {

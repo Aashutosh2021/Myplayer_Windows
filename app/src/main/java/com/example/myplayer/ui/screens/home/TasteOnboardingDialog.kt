@@ -1,12 +1,20 @@
 package com.example.myplayer.ui.screens.home
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -17,17 +25,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.myplayer.ui.theme.*
@@ -83,7 +83,21 @@ private val SUGGESTED_ARTISTS = listOf(
     "Shubh",
     "Talha Anjum",
     "Nusrat Fateh Ali Khan",
-    "Anirudh Ravichander"
+    "Anirudh Ravichander",
+    "Neha Kakkar",
+    "Jubin Nautiyal",
+    "Darshan Raval",
+    "B Praak",
+    "Armaan Malik",
+    "Sonu Nigam",
+    "Kishore Kumar",
+    "Lata Mangeshkar",
+    "Mohammed Rafi",
+    "Ed Sheeran",
+    "Taylor Swift",
+    "Drake",
+    "Imagine Dragons",
+    "BTS"
 ).map { it.trim() }
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
@@ -122,8 +136,7 @@ fun TasteOnboardingDialog(
     ) {
         Surface(
             modifier = Modifier
-                .widthIn(max = 680.dp)
-                .fillMaxWidth(0.92f)
+                .fillMaxWidth(0.94f)
                 .fillMaxHeight(0.88f),
             shape = RoundedCornerShape(28.dp),
             color = DeepOliveBackground,
@@ -232,7 +245,7 @@ fun TasteOnboardingDialog(
                         }
                     }
 
-                    // 3. Favorite Artists Section + Custom Artist Input
+                    // 3. Favorite Artists: search the internet for real artists, pick from photos
                     Text(
                         text = "3. Choose Favorite Artists (${artists.size} selected)",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
@@ -412,7 +425,7 @@ private fun ArtistPhoto(name: String, imageUrl: String?, size: androidx.compose.
             .size(size)
             .clip(CircleShape)
             .background(SurfaceLight)
-            .then(if (ring != null) Modifier.border(3.dp, ring, CircleShape) else Modifier),
+            .let { if (ring != null) it.border(3.dp, ring, CircleShape) else it },
         contentAlignment = Alignment.Center
     ) {
         Text(

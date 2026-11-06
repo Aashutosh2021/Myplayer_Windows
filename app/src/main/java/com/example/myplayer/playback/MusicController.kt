@@ -528,6 +528,7 @@ class MusicController @Inject constructor(
 
         // 1. Repeat One: replay the current song immediately
         if (playbackStateManager.repeatMode.value == Player.REPEAT_MODE_ONE) {
+            playbackCompletionGuard.reset()
             if (controller != null && controller.mediaItemCount > 0) {
                 controller.seekTo(0L)
                 controller.play()
@@ -669,8 +670,18 @@ class MusicController @Inject constructor(
         } else null
 
         if (song != null) {
-            val resolvedArt = song.albumArt ?: song.videoId?.let { "https://img.youtube.com/vi/$it/hqdefault.jpg" }
-            val songWithArt = if (song.albumArt.isNullOrBlank() && !resolvedArt.isNullOrBlank()) {
+            val ytId = song.videoId?.takeIf { it.isNotBlank() } ?: song.id
+            val localArtFile = java.io.File(java.io.File(context.filesDir, "artwork"), "$ytId.jpg")
+            val resolvedArt = when {
+                localArtFile.exists() && localArtFile.length() > 512L ->
+                    android.net.Uri.fromFile(localArtFile).toString()
+                !song.albumArt.isNullOrBlank() ->
+                    song.albumArt
+                !song.videoId.isNullOrBlank() ->
+                    "https://img.youtube.com/vi/${song.videoId}/hqdefault.jpg"
+                else -> null
+            }
+            val songWithArt = if (song.albumArt != resolvedArt && !resolvedArt.isNullOrBlank()) {
                 song.copy(albumArt = resolvedArt)
             } else {
                 song

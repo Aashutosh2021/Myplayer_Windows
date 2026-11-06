@@ -1,4 +1,4 @@
-﻿package com.example.myplayer.ui.screens.nowplaying
+package com.example.myplayer.ui.screens.nowplaying
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
@@ -220,7 +220,7 @@ private fun SyncedLyricsView(
     val baseColor = if (isDark) Color.White else CharcoalPrimary
 
     // Read positionMs.value INSIDE derivedStateOf so Compose tracks it as a
-    // dependency and re-derives on every tick â€” but only notifies readers when
+    // dependency and re-derives on every tick — but only notifies readers when
     // the active *line index* actually changes.
     val activeIndexState = remember(lines) {
         derivedStateOf {
@@ -283,7 +283,7 @@ private fun SyncedLyricsView(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = lyricLine.ifBlank { "â€¢" },
+                    text = lyricLine.ifBlank { "•" },
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.Normal,
                         fontSize = 16.sp,
@@ -326,7 +326,7 @@ private fun PlainLyricsView(text: String) {
 
 
 
-/** Original / Hinglish / à¤¹à¤¿à¤¨à¥à¤¦à¥€ / Ø§Ø±Ø¯Ùˆ chips; hidden for English lyrics. */
+/** Original / Hinglish / हिन्दी / اردو chips; hidden for English lyrics. */
 @Composable
 private fun LyricsScriptPicker(modifier: Modifier = Modifier, viewModel: LyricsViewModel = hiltViewModel()) {
     val detected by viewModel.detectedScript.collectAsStateWithLifecycle()
@@ -358,4 +358,3 @@ private fun LyricsScriptPicker(modifier: Modifier = Modifier, viewModel: LyricsV
         if (converting) CircularProgressIndicator(color = fg, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
     }
 }
-

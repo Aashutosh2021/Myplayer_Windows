@@ -225,8 +225,9 @@ open class ExoPlayer(
                 if (decodedByJavaSound) return@launch
             }
 
-            // 2. Try VLCJ PCM Transcode Pipeline (supports MP3, FLAC, M4A, OGG, and YouTube HTTPS streams)
-            val decodedByVlc = tryDecodeWithVlcPcmTranscode(cleanPath)
+            // 2. Try VLCJ PCM Transcode Pipeline (routed via 9-Second Chunk Proxy for online streams)
+            val proxiedPath = com.example.myplayer.playback.DesktopChunkStreamProxy.wrapUrlIfNeeded(cleanPath)
+            val decodedByVlc = tryDecodeWithVlcPcmTranscode(proxiedPath)
             if (decodedByVlc) return@launch
 
             // 3. Fallback: Synthesized Harmonic Stereo PCM Stream so Dual Bud Mode is always audible

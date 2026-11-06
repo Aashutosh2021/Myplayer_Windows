@@ -229,12 +229,30 @@ fun DownloadedSongItem(
                 .padding(2.dp),
             contentAlignment = Alignment.Center
         ) {
-            val artworkRequest = remember(song.title, song.artist, song.thumbnailUrl) {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val artworkRequest = remember(song.id, song.title, song.artist, song.thumbnailUrl, song.localPath) {
+                val artDirFile = java.io.File(java.io.File(context.filesDir, "artwork"), "${song.id}.jpg")
+                val audioFile = java.io.File(song.localPath)
+                val companionFile = audioFile.parentFile?.let { java.io.File(it, "${audioFile.nameWithoutExtension}.jpg") }
+                val effectiveUri = when {
+                    artDirFile.exists() && artDirFile.length() > 512L ->
+                        android.net.Uri.fromFile(artDirFile).toString()
+                    companionFile != null && companionFile.exists() && companionFile.length() > 512L ->
+                        android.net.Uri.fromFile(companionFile).toString()
+                    song.thumbnailUrl.startsWith("file://") || song.thumbnailUrl.startsWith("content://") ->
+                        song.thumbnailUrl
+                    song.thumbnailUrl.startsWith("/") || song.thumbnailUrl.matches(Regex("^[a-zA-Z]:\\\\.*")) ->
+                        android.net.Uri.fromFile(java.io.File(song.thumbnailUrl)).toString()
+                    audioFile.exists() ->
+                        android.net.Uri.fromFile(audioFile).toString()
+                    else ->
+                        song.thumbnailUrl
+                }
                 com.example.myplayer.data.artwork.model.ArtworkModel(
                     title = song.title,
                     artist = song.artist,
                     album = song.album,
-                    localUri = song.thumbnailUrl
+                    localUri = effectiveUri
                 )
             }
             AsyncImage(

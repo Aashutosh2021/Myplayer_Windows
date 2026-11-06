@@ -9,14 +9,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.Headphones
-import androidx.compose.material.icons.filled.SurroundSound
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.filled.Waves
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -53,37 +47,60 @@ object WhatsNewRepository {
 
     fun getCurrentFeatures(): List<WhatsNewFeature> = listOf(
         WhatsNewFeature(
+            icon = Icons.Filled.Link,
+            title = "Search via YouTube Link",
+            description = "Paste any YouTube or YouTube Music link directly into the search bar to instantly stream, match, or download that exact song."
+        ),
+        WhatsNewFeature(
+            icon = Icons.Filled.Headphones,
+            title = "DualBud — Dual Audio Player",
+            description = "Play two completely separate tracks through Left and Right earbuds simultaneously with dedicated volumes and controls."
+        ),
+        WhatsNewFeature(
+            icon = Icons.Filled.Group,
+            title = "SyncPlay — Listen Together",
+            description = "Host or join synchronized listening rooms to experience music in real-time with friends across multiple devices."
+        ),
+        WhatsNewFeature(
             icon = Icons.Filled.Waves,
-            title = "Studio Master Clarity (C++17 DSP)",
-            description = "8-stage psychoacoustic mastering chain: dynamic sub-bass foundation, low-mid decongestion, vocal presence lift, 1.22x stereo widener & analog air exciter."
+            title = "Studio Master DSP & Audio Lab",
+            description = "10-band ISO equalizer, Studio Master default clarity preset, dynamic sub-bass, 1.22x stereo widener, and analog air exciter."
         ),
         WhatsNewFeature(
-            icon = Icons.Filled.SurroundSound,
-            title = "Dolby Atmos & Hardware Spatial Audio",
-            description = "Dedicated hardware spatializer renderer for E-AC-3 JOC Dolby Atmos with hardware dialogue normalization and Jellyfin FFmpeg 32-bit Float decoding."
+            icon = Icons.Filled.AutoAwesome,
+            title = "Apple-Grade AutoMix & Crossfade",
+            description = "Seamless DJ-style crossfade transitions between songs with equal-power volume curves and automatic silence removal."
         ),
         WhatsNewFeature(
-            icon = Icons.Filled.GraphicEq,
-            title = "15-Band Studio Equalizer",
-            description = "15 ISO 2/3-octave center frequencies (25Hz - 16kHz) with real-time frequency curve canvas, haptic tactile faders, and 12 acoustic presets."
+            icon = Icons.Filled.Album,
+            title = "Custom Now Playing (6 Styles)",
+            description = "Personalize your vibe: Radial Dial, Turntable Vinyl, Editorial Poster, Timeline, Lyrics Stage, or Classic style."
         ),
         WhatsNewFeature(
-            icon = Icons.AutoMirrored.Filled.VolumeUp,
-            title = "ReplayGain & -14 LUFS Normalization",
-            description = "Automatic Vorbis & ID3 TXXX tag loudness normalization with Dolby Atmos +6 dB compensation and true-peak protection."
+            icon = Icons.Filled.DarkMode,
+            title = "Dark Mode by Default",
+            description = "Refined true-black aesthetics on first launch, theme-adaptive floating navigation bar, and fix for tab redirects."
         ),
         WhatsNewFeature(
-            icon = Icons.Filled.Tune,
-            title = "Redesigned Audio & Playback Hub",
-            description = "Full Light & Dark mode support with tactile clay styling, Bit-Perfect direct DAC output, and background playback protection."
+            icon = Icons.AutoMirrored.Filled.MenuBook,
+            title = "Interactive Tour & User Manual",
+            description = "Step-by-step guided walkthrough of every power feature plus an in-app User Manual accessible anytime from Settings."
+        ),
+        WhatsNewFeature(
+            icon = Icons.Filled.LocalCafe,
+            title = "Support Development (UPI / Coffee)",
+            description = "MyPlayer is 100% free and open with zero ads. You can now support ongoing development directly via GPay, PhonePe, or UPI."
+        ),
+        WhatsNewFeature(
+            icon = Icons.Filled.Backup,
+            title = "Smart Backup & Restore",
+            description = "Export and import your entire library, custom playlists, and audio preferences with one tap across any device."
         )
     )
 }
 
 /**
  * Modern "What's New" Changelog Dialog shown automatically after an app update.
- * shortcut: platform-specific "What's New" entries (Windows-exclusive features) can be
- * appended here once the port ships its own feature set; Android entries kept verbatim.
  */
 @Composable
 fun WhatsNewDialog(

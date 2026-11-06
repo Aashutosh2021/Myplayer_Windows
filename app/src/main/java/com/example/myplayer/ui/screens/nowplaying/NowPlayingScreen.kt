@@ -45,6 +45,7 @@ import com.example.myplayer.data.local.entity.PlaylistEntity
 import com.example.myplayer.playback.AudioQualityInfo
 import com.example.myplayer.playback.PlaybackSourceContext
 import com.example.myplayer.ui.common.AlbumArtImage
+import com.example.myplayer.ui.myplayer.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,6 +90,7 @@ fun NowPlayingScreen(
     onCreatePlaylistAndAdd: (String) -> Unit = {},
     playerVolume: Float = 1.0f,
     onVolumeChange: (Float) -> Unit = {},
+    myplayerState: MyPlayerUiStateHolder = rememberMyPlayerUiStateHolder(),
     onOpenCustomizeStyles: () -> Unit = {}
 ) {
     var showSleepTimer by remember { mutableStateOf(false) }
@@ -224,6 +226,44 @@ fun NowPlayingScreen(
                 selectedSideTrackForPlaylist = null
             }
         )
+    }
+
+    // Switch live between the 6 custom MyPlayer styles (Turntable, Poster, Timeline, Lyrics Stage, Default)
+    // and the 2-Pane Desktop Radial view when "Set Style" is pressed in the picker!
+    if (myplayerState.playerStyle != PlayerStyleMode.RADIAL_MYPLAYER) {
+        MyPlayerMultiStyleNowPlayingScreen(
+            myplayerState = myplayerState,
+            title = title,
+            artist = artist,
+            artUri = artUri,
+            durationMs = duration,
+            isPlaying = isPlaying,
+            positionState = positionState,
+            onPlayPauseClick = onPlayPauseClick,
+            onNextClick = onNextClick,
+            onPreviousClick = onPreviousClick,
+            onSeek = onSeek,
+            onBackClick = onBackClick,
+            sleepTimerRemaining = sleepTimerRemaining,
+            isFavorite = isFavorite,
+            onToggleFavorite = onToggleFavorite,
+            onStartSleepTimer = onStartSleepTimer,
+            onCancelSleepTimer = onCancelSleepTimer,
+            isShuffleOn = isShuffleOn,
+            onToggleShuffle = onToggleShuffle,
+            repeatMode = repeatMode,
+            onCycleRepeatMode = onCycleRepeatMode,
+            onNavigateToSettings = onNavigateToSettings,
+            canDownload = canDownload,
+            isDownloaded = isDownloaded,
+            isDownloading = isDownloading,
+            onDownloadClick = onDownloadClick,
+            onRemoveDownloadClick = onRemoveDownloadClick,
+            audioQuality = audioQuality,
+            lyricsViewModel = lyricsViewModel,
+            onOpenCustomizeStyles = onOpenCustomizeStyles
+        )
+        return
     }
 
     // Main 2-Pane Dark Container matching reference screenshot

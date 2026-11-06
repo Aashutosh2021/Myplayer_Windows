@@ -27,6 +27,9 @@ compose.desktop {
     application {
         mainClass = "com.example.myplayer.MainKt"
         javaHome = "C:/Program Files/Microsoft/jdk-21.0.10.7-hotspot"
+        buildTypes.release.proguard {
+            isEnabled.set(false)
+        }
         nativeDistributions {
             targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe)
             packageName = "MyPlayer"

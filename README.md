@@ -1,8 +1,9 @@
-# 🎵 MyPlayer for Windows
+# 🎵 MyPlayer for Windows (v6.2)
 
 <div align="center">
 
-![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
+![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?style=for-the-badge&logo=windows&logoColor=white)
+![Version](https://img.shields.io/badge/Version-v6.2-brightgreen?style=for-the-badge)
 ![Kotlin](https://img.shields.io/badge/Kotlin-100%25-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)
 ![Compose Multiplatform](https://img.shields.io/badge/UI-Compose%20Multiplatform-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)
 ![Audio Engine](https://img.shields.io/badge/Audio-JavaSound%20%2B%20VLCJ-E95420?style=for-the-badge)
@@ -10,7 +11,7 @@
 ![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
 
 <p align="center">
-  <b>A modern, high-performance Windows desktop music player built with Compose Multiplatform. Features a hardware-accelerated PCM audio engine, online streaming, synchronized lyrics, dark/light mode themes, and an innovative Dual Bud Mode that plays two different songs simultaneously through Left and Right earbuds.</b>
+  <b>A modern, high-performance Windows desktop music player built with Compose Multiplatform. Features custom native branding, an interactive installer with desktop shortcut prompt, direct hardware-accelerated 48kHz PCM audio, YouTube link search, synchronized lyrics, dark/light themes, and DualBud mode for split-earbud playback.</b>
 </p>
 
 </div>
@@ -55,6 +56,16 @@
 
 ## 🌟 Highlights & Features
 
+- **✨ Custom Native Branding & Squircle App Icon**:
+  - Full multi-resolution Windows `.ico` asset (16x16, 24x24, 32x32, 48x48, 64x64, 128x128, 256x256) with smooth squircle alpha masking. Zero default Kotlin launcher icons.
+- **🛠️ Interactive Installer with Desktop Icon Prompt**:
+  - Windows `.msi` and `.exe` installers feature an interactive checkbox allowing users to choose whether to create desktop and start menu shortcuts upon installation (`--win-shortcut-prompt`).
+- **🔗 Search via YouTube / YouTube Music Link**:
+  - Direct URL search bar pasting: paste any YouTube or YouTube Music link to immediately resolve, stream, and match metadata.
+- **🚀 "What's New in v6.2" In-App Dialog**:
+  - Automatic startup changelog highlighting the latest features, release notes, and updates.
+- **☕ In-App Developer Support (UPI / Coffee)**:
+  - Support ad-free open-source development directly via GPay, PhonePe, or UPI QR code.
 - **🎧 Dual Bud Mode (Split Earbud Playback)**:
   - Play two separate songs simultaneously—one in your **Left earbud** and another in your **Right earbud**.
   - Independent play/pause, seek bars, and volume sliders for each channel.
@@ -155,12 +166,18 @@ MyPlayer_Windows/
   `app\build\compose\binaries\main\app\MyPlayer\MyPlayer.exe`
 
 - **Build Windows MSI Installer**:
-  *(Requires [WiX Toolset](https://wixtoolset.org/))*:
   ```bash
   .\gradlew.bat :app:packageMsi
   ```
   The installer `.msi` will be output to:
-  `app\build\compose\binaries\main\msi\`
+  `app\build\compose\binaries\main\msi\MyPlayer-6.2.0.msi`
+
+- **Build Windows Executable Installer**:
+  ```bash
+  .\gradlew.bat :app:packageExe
+  ```
+  The installer `.exe` will be output to:
+  `app\build\compose\binaries\main\exe\MyPlayer-6.2.0.exe`
 
 ---
 

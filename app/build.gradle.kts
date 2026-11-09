@@ -33,7 +33,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe)
             packageName = "MyPlayer"
-            packageVersion = "2.0.1"
+            packageVersion = "6.2.0"
             appResourcesRootDir.set(project.layout.projectDirectory.dir("package-resources"))
             modules(
                 "java.base",
@@ -60,6 +60,12 @@ compose.desktop {
                 menu = true
             }
         }
+    }
+}
+
+tasks.withType<org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask>().configureEach {
+    if (name.contains("package", ignoreCase = true) && (name.contains("Exe") || name.contains("Msi"))) {
+        freeArgs.add("--win-shortcut-prompt")
     }
 }
 

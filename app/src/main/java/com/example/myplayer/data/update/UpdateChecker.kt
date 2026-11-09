@@ -44,9 +44,9 @@ class UpdateChecker @Inject constructor(
         private const val TAG = "UpdateChecker"
 
         private const val GITHUB_OWNER = "Aashutosh2021"
-        private const val GITHUB_REPO = "MyPlayer"
+        private const val GITHUB_REPO = "Myplayer_Windows"
 
-        const val UPDATE_WEBSITE_URL = "https://aashutosh2021.github.io/MyPlayer/"
+        const val UPDATE_WEBSITE_URL = "https://myplayer-660ee.web.app/"
 
         private const val RELEASES_URL =
             "https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
@@ -115,7 +115,7 @@ class UpdateChecker @Inject constructor(
                 val releaseName = json.optString("name", "")
                 val notes = json.optString("body", "")
 
-                // Look for direct APK asset download URL
+                // Look for direct Windows installer or asset download URL
                 var apkDownloadUrl: String? = null
                 var apkFileName: String? = null
                 val assetsArray = json.optJSONArray("assets")
@@ -123,7 +123,10 @@ class UpdateChecker @Inject constructor(
                     for (i in 0 until assetsArray.length()) {
                         val asset = assetsArray.optJSONObject(i) ?: continue
                         val name = asset.optString("name", "")
-                        if (name.endsWith(".apk", ignoreCase = true)) {
+                        if (name.endsWith(".msi", ignoreCase = true) ||
+                            name.endsWith(".exe", ignoreCase = true) ||
+                            name.endsWith(".zip", ignoreCase = true) ||
+                            name.endsWith(".apk", ignoreCase = true)) {
                             apkFileName = name
                             apkDownloadUrl = asset.optString("browser_download_url", "")
                             break

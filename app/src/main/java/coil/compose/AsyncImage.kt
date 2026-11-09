@@ -18,6 +18,7 @@ import com.example.myplayer.di.AppContainer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.net.URLDecoder
 
 private val YT_THUMB_VIDEO_ID_REGEX = Regex("""(?:i\.ytimg\.com/vi(?:_webp)?/|img\.youtube\.com/vi/)([a-zA-Z0-9_-]{11})/""")
 
@@ -25,6 +26,9 @@ private val YT_THUMB_VIDEO_ID_REGEX = Regex("""(?:i\.ytimg\.com/vi(?:_webp)?/|im
  * Resolves offline local artwork files (in `~/.myplayer/files/artwork/<videoId>.jpg`,
  * companion `<song>.jpg`, or embedded ID3/MP4 cover art) and [ArtworkModel] requests
  * before delegating to [coil3.compose.AsyncImage].
+ *
+ * FIXED FOR WINDOWS DESKTOP:
+ * Matches both `C:\...` and `C:/...` Windows drive paths and decodes `%20` URL-encoded file paths.
  */
 private fun resolveImmediateDesktopModel(rawModel: Any?): Any? {
     val unwrapped = if (rawModel is ImageRequest) rawModel.data else rawModel
@@ -47,9 +51,18 @@ private fun resolveLocalArtworkFile(uriOrUrl: String): File? {
     val clean = uriOrUrl.trim()
     val artworkDir = File(Context.DEFAULT.filesDir, "artwork")
 
-    // 1. Direct local file or companion image next to audio file
-    if (clean.startsWith("file://") || clean.startsWith("file:/") || clean.startsWith("/") || clean.matches(Regex("^[a-zA-Z]:\\\\.*"))) {
-        val filePath = clean.removePrefix("file://").removePrefix("file:")
+    // 1. Direct local file or companion image next to audio file (supports both C:\ and C:/ on Windows)
+    if (clean.startsWith("file:", ignoreCase = true) ||
+        clean.startsWith("/") ||
+        clean.matches(Regex("^[a-zA-Z]:[\\\\/].*"))
+    ) {
+        val stripped = clean
+            .removePrefix("file:///")
+            .removePrefix("file://")
+            .removePrefix("file:/")
+            .removePrefix("file:")
+        val decoded = runCatching { URLDecoder.decode(stripped, "UTF-8") }.getOrDefault(stripped.replace("%20", " "))
+        val filePath = if (decoded.matches(Regex("^/[a-zA-Z]:[\\\\/].*"))) decoded.substring(1) else decoded
         val f = File(filePath)
         val ext = f.extension.lowercase()
         if (f.exists() && ext in setOf("jpg", "jpeg", "png", "webp")) {
@@ -63,7 +76,6 @@ private fun resolveLocalArtworkFile(uriOrUrl: String): File? {
             val byNameInArtDir = File(artworkDir, "${f.nameWithoutExtension}.jpg")
             if (byNameInArtDir.exists() && byNameInArtDir.length() > 0) return byNameInArtDir
 
-            // Extract embedded ID3/MP4 picture into cache if present
             val cachedExtracted = File(artworkDir.apply { mkdirs() }, "embedded_${f.nameWithoutExtension.hashCode()}.jpg")
             if (cachedExtracted.exists() && cachedExtracted.length() > 0) return cachedExtracted
             val retriever = MediaMetadataRetriever()
@@ -81,12 +93,12 @@ private fun resolveLocalArtworkFile(uriOrUrl: String): File? {
         }
     }
 
-    // 2. If it's a YouTube thumbnail URL (https://i.ytimg.com/vi/<videoId>/...), check if we have a saved local artwork file!
+    // 2. If it's a YouTube thumbnail URL, check if we have a saved local artwork file!
     val ytMatch = YT_THUMB_VIDEO_ID_REGEX.find(clean)
     if (ytMatch != null) {
         val videoId = ytMatch.groupValues[1]
         val localArt = File(artworkDir, "$videoId.jpg")
-        if (localArt.exists() && localArt.length() > 0) {
+        if (localArt.exists() && localArt.length() > 512L) {
             return localArt
         }
     }

@@ -18,6 +18,7 @@ import javax.inject.Singleton
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.ln
 import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -63,6 +64,10 @@ class MasterAudioDspProcessor @Inject constructor() : BaseAudioProcessor() {
             1000f, 1600f, 2500f, 4000f, 6300f, 10000f, 16000f
         )
 
+        val BAND_10_FREQUENCIES = floatArrayOf(
+            31f, 62f, 125f, 250f, 500f, 1000f, 2000f, 4000f, 8000f, 16000f
+        )
+
         val BAND_LABELS = listOf(
             "25\nSUB", "40\nSUB", "63\nBASS", "100\nBASS", "160\nLOW-MID",
             "250\nLOW-MID", "400\nMID", "630\nMID", "1k\nUPPER-MID", "1.6k\nPRESENCE",
@@ -72,6 +77,33 @@ class MasterAudioDspProcessor @Inject constructor() : BaseAudioProcessor() {
         private const val EQ_Q = 1.41421356
         private const val SOFT_KNEE = 0.841395141
         private const val CEILING = 0.944060876
+
+        /**
+         * Log-frequency interpolation from 10-Band Rainbow EQ (31 Hz..16 kHz)
+         * onto the 15 ISO 2/3-octave center frequencies (25 Hz..16 kHz).
+         */
+        fun map10BandsTo15Bands(gains10: FloatArray): FloatArray {
+            if (gains10.size < 10) return FloatArray(15)
+            val out15 = FloatArray(15)
+            val log10Freqs = FloatArray(10) { ln(BAND_10_FREQUENCIES[it].toDouble()).toFloat() }
+            for (i in 0 until 15) {
+                val f = BAND_FREQUENCIES[i]
+                val lf = ln(f.toDouble()).toFloat()
+                when {
+                    lf <= log10Freqs[0] -> out15[i] = gains10[0]
+                    lf >= log10Freqs[9] -> out15[i] = gains10[9]
+                    else -> {
+                        var k = 0
+                        while (k < 8 && log10Freqs[k + 1] < lf) {
+                            k++
+                        }
+                        val t = ((lf - log10Freqs[k]) / (log10Freqs[k + 1] - log10Freqs[k])).coerceIn(0f, 1f)
+                        out15[i] = gains10[k] + (gains10[k + 1] - gains10[k]) * t
+                    }
+                }
+            }
+            return out15
+        }
     }
 
     private external fun nativeConfigure(
@@ -105,6 +137,12 @@ class MasterAudioDspProcessor @Inject constructor() : BaseAudioProcessor() {
     @Volatile private var nativeError: String? = libError
     @Volatile private var lastSampleRate = 48000
 
+    // Live 10-Band Rainbow Equalizer & Preamp override from MyPlayerAudioFxDspBridge
+    @Volatile private var audioLabEqEnabled: Boolean = false
+    @Volatile private var audioLabGains15: FloatArray? = null
+    @Volatile private var audioLabPreampDb: Float = 0f
+    @Volatile private var audioLabAutoPreamp: Boolean = true
+
     private val eqLock = Any()
     private val kotlinEq = KotlinEq()
 
@@ -117,7 +155,24 @@ class MasterAudioDspProcessor @Inject constructor() : BaseAudioProcessor() {
         this.currentState = newState
         this.currentTrackLufs = trackLufs
         this.isSpatialStream = isSpatial
-        // Always push, even before the first track: the sample rate falls back to the last known one.
+        val sr = if (inputAudioFormat.sampleRate > 0) inputAudioFormat.sampleRate else lastSampleRate
+        pushConfig(sr)
+    }
+
+    /**
+     * Called live from MyPlayerAudioFxDspBridge when the user toggles or drags sliders in
+     * the 10-Band Rainbow Equalizer, Preamp, or AutoEQ headphone profiles.
+     */
+    fun updateFromAudioLab10Band(
+        enabled: Boolean,
+        gains10: FloatArray,
+        preampDb: Float,
+        autoPreamp: Boolean
+    ) {
+        this.audioLabEqEnabled = enabled
+        this.audioLabGains15 = map10BandsTo15Bands(gains10)
+        this.audioLabPreampDb = preampDb.coerceIn(-12f, 12f)
+        this.audioLabAutoPreamp = autoPreamp
         val sr = if (inputAudioFormat.sampleRate > 0) inputAudioFormat.sampleRate else lastSampleRate
         pushConfig(sr)
     }
@@ -137,7 +192,6 @@ class MasterAudioDspProcessor @Inject constructor() : BaseAudioProcessor() {
     }
 
     override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat {
-        // Support BOTH Float32 and Int16 PCM, Mono and Stereo (1..2 channels)
         val isSupportedEncoding = inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT ||
                 inputAudioFormat.encoding == C.ENCODING_PCM_16BIT
         if (!isSupportedEncoding || inputAudioFormat.channelCount !in 1..2) {
@@ -152,39 +206,57 @@ class MasterAudioDspProcessor @Inject constructor() : BaseAudioProcessor() {
         lastSampleRate = sr
         val st = currentState
 
-        val gains = FloatArray(15) { i -> st.eqBandGains.getOrElse(i) { 0f } }
+        // Combine 15-band ISO EQ (AudioPlaybackStore) and 10-band Rainbow EQ (AudioLab)
+        val storeEqActive = st.eqEnabled && st.eqBandGains.any { abs(it) >= 0.01f }
+        val labGains = audioLabGains15
+        val labEqActive = audioLabEqEnabled && labGains != null && labGains.any { abs(it) >= 0.01f }
+        val effectiveEqEnabled = st.eqEnabled || audioLabEqEnabled
 
-        // Studio Master Clarity is active when explicitly enabled OR when Studio Master preset is active
+        val gains = FloatArray(15) { i ->
+            val g15 = if (st.eqEnabled) st.eqBandGains.getOrElse(i) { 0f } else 0f
+            val g10 = if (audioLabEqEnabled && labGains != null) labGains.getOrElse(i) { 0f } else 0f
+            when {
+                storeEqActive && labEqActive -> (g15 + g10).coerceIn(-12f, 12f)
+                labEqActive -> g10.coerceIn(-12f, 12f)
+                else -> g15.coerceIn(-12f, 12f)
+            }
+        }
+
         val isStudioPreset = st.eqPreset == Eq15Preset.STUDIO_MASTER
         val effectiveClarity = (st.studioMasterClarity || isStudioPreset) &&
                 !(st.claritySpatialBypass && isSpatialStream)
 
         val loudnessDb = when (st.loudnessMode) {
             LoudnessMode.OFF -> 0f
-            LoudnessMode.TRACK -> (-14.0f - currentTrackLufs).coerceIn(-6f, 4f)
-            LoudnessMode.ALBUM -> (-14.0f - (currentTrackLufs - 1.0f)).coerceIn(-6f, 3.5f)
+            LoudnessMode.TRACK -> (-14.0f - currentTrackLufs).coerceIn(-6f, 6f)
+            LoudnessMode.ALBUM -> (-14.0f - (currentTrackLufs - 1.0f)).coerceIn(-6f, 5f)
         }
+
+        val userPreampOffsetDb = if (audioLabEqEnabled && !audioLabAutoPreamp) audioLabPreampDb else 0f
+        val totalLoudnessAndPreampDb = (loudnessDb + userPreampOffsetDb).coerceIn(-12f, 12f)
         val bitPerfect = st.bitPerfectMode || st.usbExclusiveOutput
 
-        // 1) Kotlin EQ is ALWAYS configured with automatic anti-clipping headroom compensation:
-        //    When EQ bands have positive boost (e.g. Bass Boost / Studio Master), attenuate preamp
-        //    proportionally so 0 dBFS mastered tracks never overdrive or sound like a blown speaker.
-        val maxPositiveBoostDb = if (st.eqEnabled) (gains.maxOrNull()?.coerceAtLeast(0f) ?: 0f) else 0f
-        val headroomPadDb = if (st.eqEnabled && maxPositiveBoostDb > 0f) -(maxPositiveBoostDb * 0.60f) else 0f
-        val preampDb = (loudnessDb + headroomPadDb).coerceIn(-12f, 3f)
-        synchronized(eqLock) { kotlinEq.configure(sr, gains, st.eqEnabled, preampDb) }
+        // 1) Kotlin EQ is ALWAYS configured so failover is instant and glitch-free
+        val maxBoost = if (effectiveEqEnabled) (gains.maxOrNull() ?: 0f).coerceAtLeast(0f) else 0f
+        val autoHeadroomDb = if (effectiveEqEnabled && audioLabAutoPreamp) {
+            -maxOf(0f, maxBoost - 1.0f)
+        } else {
+            0f
+        }
+        val kotlinPreampDb = totalLoudnessAndPreampDb + autoHeadroomDb + if (effectiveEqEnabled) 1.0f else 0.0f
+        synchronized(eqLock) { kotlinEq.configure(sr, gains, effectiveEqEnabled, kotlinPreampDb) }
 
-        // 2) Native engine (preferred: also carries the Studio Clarity chain).
+        // 2) Native engine (preferred: also carries the 64-bit Studio Master Clarity chain)
         if (nativeReady) {
             try {
                 nativeConfigure(
                     sampleRate = sr,
                     bitPerfect = bitPerfect,
-                    eqEnabled = st.eqEnabled,
+                    eqEnabled = effectiveEqEnabled,
                     eqGains = gains,
                     studioClarity = effectiveClarity,
                     clarityPresetOrd = st.clarityOutputPreset.ordinal,
-                    loudnessGainDb = loudnessDb
+                    loudnessGainDb = totalLoudnessAndPreampDb
                 )
             } catch (t: Throwable) {
                 nativeReady = false
@@ -197,8 +269,8 @@ class MasterAudioDspProcessor @Inject constructor() : BaseAudioProcessor() {
             usingKotlinFallback = !nativeReady,
             lastError = nativeError,
             sampleRate = sr,
-            eqEnabled = st.eqEnabled,
-            activeBands = if (st.eqEnabled) gains.count { abs(it) >= 0.005f } else 0,
+            eqEnabled = effectiveEqEnabled,
+            activeBands = if (effectiveEqEnabled) gains.count { abs(it) >= 0.005f } else 0,
             clarityActive = effectiveClarity,
             clarityNeedsNative = effectiveClarity && !nativeReady
         )
@@ -211,7 +283,6 @@ class MasterAudioDspProcessor @Inject constructor() : BaseAudioProcessor() {
         val outputBuffer = replaceOutputBuffer(remaining).order(ByteOrder.nativeOrder())
         val st = currentState
 
-        // Bit-Perfect Mode or USB Exclusive: 100% direct pass-through
         if (st.bitPerfectMode || st.usbExclusiveOutput) {
             outputBuffer.put(inputBuffer)
             outputBuffer.flip()
@@ -235,7 +306,6 @@ class MasterAudioDspProcessor @Inject constructor() : BaseAudioProcessor() {
                 }
                 processed = true
             } catch (t: Throwable) {
-                // JNI symbol missing / library broken: switch to Kotlin permanently and say so.
                 nativeReady = false
                 nativeError = "${t.javaClass.simpleName}: ${t.message}"
                 _status.value = _status.value.copy(
@@ -306,7 +376,7 @@ class MasterAudioDspProcessor @Inject constructor() : BaseAudioProcessor() {
 
         fun process(buf: ByteBuffer, byteOffset: Int, frames: Int, channels: Int, isFloat: Boolean) {
             val idxs = activeIdx
-            if (idxs.isEmpty() && abs(preamp - 1.0) < 0.001) return
+            if (idxs.isEmpty() && preamp == 1.0) return
 
             val bytesPer = if (isFloat) 4 else 2
             val ch = if (channels >= 2) 2 else 1

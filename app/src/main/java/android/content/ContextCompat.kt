@@ -233,16 +233,27 @@ open class Context {
     open fun checkPermission(permission: String, pid: Int, uid: Int): Int = 0
     open fun startService(intent: Intent?): Any? = null
     open fun stopService(intent: Intent?): Boolean = true
+
+    /**
+     * FIXED FOR WINDOWS DESKTOP:
+     * Supports `http://`, `https://`, AND `mailto:` URIs via `java.awt.Desktop`
+     * (and rethrows on `mailto:` failure so callers like `SettingsScreen.sendEmail`
+     * fall back to copying the developer email to the Windows clipboard).
+     */
     open fun startActivity(intent: Intent?) {
-        try {
-            intent?.data?.let { uri ->
-                val str = uri.toString()
-                if (str.startsWith("http://") || str.startsWith("https://")) {
-                    java.awt.Desktop.getDesktop().browse(java.net.URI.create(str))
+        val uri = intent?.data ?: return
+        val str = uri.toString().trim()
+        when {
+            str.startsWith("http://", ignoreCase = true) || str.startsWith("https://", ignoreCase = true) -> {
+                try {
+                    java.awt.Desktop.getDesktop().browse(java.net.URI(str))
+                } catch (e: Exception) {
+                    println("Cannot open URL on desktop: ${e.message}")
                 }
             }
-        } catch (e: Exception) {
-            println("Cannot open URL on desktop: ${e.message}")
+            str.startsWith("mailto:", ignoreCase = true) -> {
+                java.awt.Desktop.getDesktop().mail(java.net.URI(str.replace(" ", "%20")))
+            }
         }
     }
 

@@ -26,12 +26,22 @@ tasks.withType<Copy> {
 compose.desktop {
     application {
         mainClass = "com.example.myplayer.MainKt"
-        javaHome = "C:/Program Files/Microsoft/jdk-21.0.10.7-hotspot"
+        // Dynamically resolve JDK 21 path so builds succeed on any Windows machine
+        val preferredJdk = File("C:/Program Files/Microsoft/jdk-21.0.10.7-hotspot")
+        javaHome = when {
+            preferredJdk.exists() -> preferredJdk.absolutePath
+            !System.getenv("JAVA_HOME").isNullOrBlank() && File(System.getenv("JAVA_HOME")).exists() ->
+                System.getenv("JAVA_HOME")
+            else -> System.getProperty("java.home")
+        }
         buildTypes.release.proguard {
             isEnabled.set(false)
         }
         nativeDistributions {
-            targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe)
+            targetFormats(
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi,
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe
+            )
             packageName = "MyPlayer"
             packageVersion = "6.2.0"
             appResourcesRootDir.set(project.layout.projectDirectory.dir("package-resources"))
@@ -52,7 +62,7 @@ compose.desktop {
                 "jdk.crypto.ec"
             )
             windows {
-                iconFile = project.file("icons/MyPlayer.ico")
+                iconFile.set(project.file("icons/MyPlayer.ico"))
                 menuGroup = "MyPlayer"
                 upgradeUuid = "68c22756-3474-4ec5-b006-258d4a9ec110"
                 dirChooser = true
@@ -64,6 +74,7 @@ compose.desktop {
 }
 
 tasks.withType<org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask>().configureEach {
+    iconFile.set(project.file("icons/MyPlayer.ico"))
     if (name.contains("package", ignoreCase = true) && (name.contains("Exe") || name.contains("Msi"))) {
         freeArgs.add("--win-shortcut-prompt")
     }
@@ -92,12 +103,10 @@ dependencies {
     implementation(libs.org.json)
     implementation(libs.androidx.annotation)
 
-
     // Navigation & Lifecycle
     implementation(libs.navigation.compose.kmp)
     implementation(libs.lifecycle.viewmodel.compose.kmp)
     implementation(libs.coroutines.swing)
-
 
     // Audio Engine: VLCJ & mDNS Auto-Discovery: JmDNS
     implementation(libs.vlcj)

@@ -9,11 +9,13 @@ import com.example.myplayer.data.local.dao.*
 import com.example.myplayer.data.local.datastore.SettingsDataStore
 import com.example.myplayer.data.online.InnertubeApi
 import com.example.myplayer.data.repository.*
+import com.example.myplayer.myplayerfx.AudioFxService
 import com.example.myplayer.playback.*
 import com.example.myplayer.playback.dsp.SpatialAudioProcessor
 import com.example.myplayer.playback.dsp.SpatialParams
 import com.example.myplayer.security.NetworkSecurityManager
 import com.example.myplayer.security.StringEncryptionManager
+import com.example.myplayer.ui.myplayer.MyPlayerAudioFxDspBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.firstOrNull
@@ -27,14 +29,26 @@ object AppContainer {
     private val singletons = mutableMapOf<Class<*>, Any>()
     private val scope = CoroutineScope(Dispatchers.IO)
 
-    // Composed DSP inputs from the two audio settings sources (store wins over legacy),
-    // shared so both collectors apply the full picture independently.
     @Volatile private var masterAudioState = com.example.myplayer.data.preferences.AudioPlaybackState()
     @Volatile private var masterLegacyPreampDb: Float = 0f
 
     private fun applyMasterDsp() {
-        val preampDb = if (masterAudioState.loudnessMode != com.example.myplayer.data.preferences.LoudnessMode.OFF) 0f else masterLegacyPreampDb
-        com.example.myplayer.playback.DesktopAudioBackend.setDspParams(masterAudioState.eqEnabled, masterAudioState.eqBandGains, preampDb)
+        val preampDb = if (masterAudioState.loudnessMode != com.example.myplayer.data.preferences.LoudnessMode.OFF) {
+            0f
+        } else {
+            masterLegacyPreampDb + if (MyPlayerAudioFxDspBridge.eqEnabled) MyPlayerAudioFxDspBridge.eqPreampDb else 0f
+        }
+        val anyEq = masterAudioState.eqEnabled || MyPlayerAudioFxDspBridge.eqEnabled
+        val gains = if (MyPlayerAudioFxDspBridge.eqEnabled) {
+            val lab15 = MyPlayerAudioFxDspBridge.getInterpolated15BandGains()
+            List(15) { i ->
+                val base = if (masterAudioState.eqEnabled) masterAudioState.eqBandGains.getOrElse(i) { 0f } else 0f
+                (base + lab15[i]).coerceIn(-12f, 12f)
+            }
+        } else {
+            masterAudioState.eqBandGains
+        }
+        com.example.myplayer.playback.DesktopAudioBackend.setDspParams(anyEq, gains, preampDb)
     }
 
     fun initialize() {
@@ -256,9 +270,22 @@ object AppContainer {
         )
         register(com.example.myplayer.sync.SyncPlayManager::class.java, syncPlayManager)
 
-        // ===== Master audio, 3D Spatial / Atmos, Spotify & Listen-Together wiring =====
+        // ===== Master audio, AudioFxService, 3D Spatial / Atmos, Crossfade & Speed wiring =====
         val audioPlaybackStore = com.example.myplayer.data.preferences.AudioPlaybackStore(appContext)
         register(com.example.myplayer.data.preferences.AudioPlaybackStore::class.java, audioPlaybackStore)
+
+        // Explicitly register AudioFxService BEFORE DesktopAudioBackend.init() so all Audio Lab
+        // DSP processors (Reverb, Spatial, Loudness, VolumeCurve) attach cleanly!
+        val audioFxService = AudioFxService()
+        register(AudioFxService::class.java, audioFxService)
+        MyPlayerAudioFxDspBridge.attach(audioFxService)
+
+        // Wire Audio Lab Speed & Pitch hook directly in AppContainer (since MusicService is not started on Desktop)
+        MyPlayerAudioFxDspBridge.onUpdatePlaybackSpeedPitch = { speed, _ ->
+            try {
+                DesktopAudioBackend.setSpeed(speed)
+            } catch (_: Throwable) {}
+        }
 
         val centralDsp = com.example.myplayer.playback.dsp.MasterAudioDspProcessor()
         val centralLastWave = com.example.myplayer.playback.dsp.LastWaveDspAudioProcessor()
@@ -270,20 +297,18 @@ object AppContainer {
         val audioFeatureManagers = com.example.myplayer.playback.AudioFeatureManagers(okHttpClient)
         register(com.example.myplayer.playback.AudioFeatureManagers::class.java, audioFeatureManagers)
 
-        // Crossfade engine — attached to the shared MediaController shim, which drives
-        // DesktopAudioBackend (the audible VLC output).
+        // Crossfade engine — checks BOTH AudioPlaybackStore AND Audio Lab (MyPlayerAudioFxDspBridge)
         try {
             audioFeatureManagers.attachCrossfadeMonitor(
                 scope = scope,
                 player = androidx.media3.session.MediaController.getShared(),
-                isEnabled = { masterAudioState.crossfadeEnabled },
+                isEnabled = { masterAudioState.crossfadeEnabled || MyPlayerAudioFxDspBridge.isAnyCrossfadeActive },
                 crossfadeDurationSec = masterAudioState.crossfadeSeconds
             )
         } catch (e: Throwable) {
             println("[AppContainer] Crossfade monitor unavailable: ${e.message}")
         }
 
-        // 15-band EQ + 3D Spatial / Dolby Atmos + store loudness -> VLC DSP bridge
         scope.launch {
             audioPlaybackStore.stateFlow.collect { state ->
                 masterAudioState = state
@@ -345,7 +370,6 @@ object AppContainer {
         val hybridLibraryRepository = com.example.myplayer.data.repository.HybridLibraryRepository(db.downloadedSongDao(), db.songDao())
         register(com.example.myplayer.data.repository.HybridLibraryRepository::class.java, hybridLibraryRepository)
 
-        // Resume any pending sequential backup redownloads in the background
         RedownloadQueueWorker.resumeIfPending(appContext)
 
         try {
@@ -374,6 +398,8 @@ object AppContainer {
     }
 
     @Suppress("UNCHECKED_CAST")
+    fun <T : Any> get(type: Class<T>): T? = resolveDependency(type) as? T
+
     fun <VM : ViewModel> getViewModel(modelClass: Class<VM>): VM {
         return viewModels.getOrPut(modelClass) {
             createViewModel(modelClass)

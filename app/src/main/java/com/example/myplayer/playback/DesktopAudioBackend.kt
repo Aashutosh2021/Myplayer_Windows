@@ -2,9 +2,13 @@ package com.example.myplayer.playback
 
 import android.content.Context
 import android.os.Environment
+import com.example.myplayer.myplayerfx.DesktopMyPlayerDspPipeline
+import com.example.myplayer.ui.myplayer.MyPlayerAudioFxDspBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import uk.co.caprica.vlcj.factory.MediaPlayerFactory
 import uk.co.caprica.vlcj.factory.discovery.NativeDiscovery
@@ -12,14 +16,16 @@ import uk.co.caprica.vlcj.player.base.Equalizer
 import uk.co.caprica.vlcj.player.base.MediaPlayer
 import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter
 import uk.co.caprica.vlcj.player.base.callback.DefaultAudioCallbackAdapter
-import com.example.myplayer.myplayerfx.DesktopMyPlayerDspPipeline
 import java.io.File
 import java.net.URI
 import java.net.URLDecoder
 import javax.sound.sampled.AudioSystem
 import javax.sound.sampled.SourceDataLine
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.ln
+import kotlin.math.sin
 
 object DesktopAudioBackend {
     private var mediaPlayer: MediaPlayer? = null
@@ -27,25 +33,21 @@ object DesktopAudioBackend {
     var isVlcAvailable: Boolean = false
         private set
 
-    /**
-     * Desktop DSP warm path: VLC's callback aout (amem) pushes S16N PCM into
-     * DesktopMyPlayerDspPipeline (master EQ -> 3D Spatial / Atmos -> Audio Lab spatial/reverb/loudness -> volume stage)
-     * and the output is written to a Java Sound line. When this fails the player silently falls
-     * back to VLC's native output (which also carries the native equalizer with headroom protection).
-     */
     private const val CALLBACK_RATE = 48000
     private const val CALLBACK_CHANNELS = 2
     private const val BYTES_PER_SAMPLE = 2
-    private const val BLOCK_ALIGN = CALLBACK_CHANNELS * BYTES_PER_SAMPLE // 4 bytes per stereo frame
+    private const val BLOCK_ALIGN = CALLBACK_CHANNELS * BYTES_PER_SAMPLE
     private var soundLine: SourceDataLine? = null
     private var currentRate: Float = 1f
+    @Volatile private var userTargetVolume: Float = 1f
+    private var pauseFadeJob: Job? = null
 
     private val backendScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     // VLC's native band table (fixed frequencies, Hz): 60, 170, 310, 600, 1k, 3k, 6k, 12k, 14k, 16k.
     private val VLC_BAND_CENTERS = floatArrayOf(60f, 170f, 310f, 600f, 1000f, 3000f, 6000f, 12000f, 14000f, 16000f)
     private const val VLC_EQ_BAND_COUNT = 10
-    private const val VLC_AMP_MIN_DB = -20f // libvlc equalizer band/preamp gain range in dB
+    private const val VLC_AMP_MIN_DB = -20f
     private const val VLC_AMP_MAX_DB = 20f
     private val dspLock = Any()
     @Volatile private var lastDspSignature: String? = null
@@ -60,12 +62,28 @@ object DesktopAudioBackend {
     private var simulatedPauseTime: Long = 0L
     private var isSimulatedPlaying: Boolean = false
 
+    /**
+     * Searches all standard Windows VLC installation paths (64-bit, 32-bit, LocalAppData, env vars)
+     * so libVLC is discovered reliably on any Windows PC.
+     */
+    fun discoverWindowsVlcPath(): File? {
+        val candidates = buildList {
+            System.getenv("VLC_PLUGIN_PATH")?.let { add(File(it).parentFile ?: File(it)) }
+            System.getenv("ProgramFiles")?.let { add(File(it, "VideoLAN\\VLC")) }
+            System.getenv("ProgramFiles(x86)")?.let { add(File(it, "VideoLAN\\VLC")) }
+            System.getenv("LOCALAPPDATA")?.let { add(File(it, "Programs\\VideoLAN\\VLC")) }
+            add(File("C:\\Program Files\\VideoLAN\\VLC"))
+            add(File("C:\\Program Files (x86)\\VideoLAN\\VLC"))
+        }
+        return candidates.firstOrNull { dir ->
+            dir.exists() && dir.isDirectory && File(dir, "libvlc.dll").exists()
+        }
+    }
+
     fun init() {
         try {
-            // Ensure JNA passes UTF-8 strings to libVLC on Windows
             System.setProperty("jna.encoding", "UTF-8")
-            val vlcDir = File("C:\\Program Files\\VideoLAN\\VLC")
-            if (vlcDir.exists()) {
+            discoverWindowsVlcPath()?.let { vlcDir ->
                 System.setProperty("jna.library.path", vlcDir.absolutePath)
             }
             NativeDiscovery().discover()
@@ -118,8 +136,6 @@ object DesktopAudioBackend {
             isVlcAvailable = true
             println("[DesktopAudioBackend] VLC Media Engine initialized successfully.")
             try {
-                // Mobile DSP chain (Audio Lab / Master EQ / 3D Spatial) needs raw PCM; switch VLC to its
-                // callback output and drive a Java Sound line through the Kotlin DSP processors.
                 enableCallbackAudio()
             } catch (t: Throwable) {
                 println("[DesktopAudioBackend] DSP callback output unavailable: ${t.message}. VLC native output stays active.")
@@ -130,10 +146,6 @@ object DesktopAudioBackend {
         }
     }
 
-    /**
-     * Resolves a Windows/Desktop local file path or `file:` URI into an existing [File] on disk,
-     * properly decoding `%20` spaces and stripping leading `/C:/` slashes on Windows.
-     */
     fun resolveLocalFile(pathOrUri: String?): File? {
         if (pathOrUri.isNullOrBlank()) return null
         val trimmed = pathOrUri.trim()
@@ -145,11 +157,8 @@ object DesktopAudioBackend {
         }
 
         val candidates = mutableListOf<File>()
-
-        // 1. Direct File check
         candidates.add(File(trimmed))
 
-        // 2. If it starts with file:, try URI constructor and URL-decoded path
         if (trimmed.startsWith("file:", ignoreCase = true)) {
             runCatching { File(URI(trimmed)) }.getOrNull()?.let { candidates.add(it) }
             val stripped = trimmed
@@ -161,7 +170,6 @@ object DesktopAudioBackend {
             val winFixed = if (decoded.matches(Regex("^/[a-zA-Z]:[\\\\/].*"))) decoded.substring(1) else decoded
             candidates.add(File(winFixed))
         } else {
-            // 3. Also try URL-decoding and stripping leading /C:/ if present
             val decoded = runCatching { URLDecoder.decode(trimmed, "UTF-8") }.getOrDefault(trimmed.replace("%20", " "))
             val winFixed = if (decoded.matches(Regex("^/[a-zA-Z]:[\\\\/].*"))) decoded.substring(1) else decoded
             candidates.add(File(winFixed))
@@ -173,7 +181,6 @@ object DesktopAudioBackend {
             }
         }
 
-        // 4. Fallback: check ~/.myplayer/files/Music by file name
         val fileName = candidates.firstOrNull()?.name?.takeIf { it.isNotBlank() }
         if (fileName != null) {
             val musicDir = Context.DEFAULT.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: Context.DEFAULT.filesDir
@@ -187,9 +194,9 @@ object DesktopAudioBackend {
     }
 
     fun play(pathOrUri: String, startPositionMs: Long = 0L) {
-        // 1. Check if pathOrUri resolves to a local / downloaded file on disk.
-        // If so, serve it via DesktopChunkStreamProxy.wrapLocalFile(localFile) (`http://127.0.0.1:<port>/local?id=...`)
-        // so libVLC plays it over loopback HTTP with 0 Windows path, `%20`, or Unicode encoding issues!
+        pauseFadeJob?.cancel()
+        applyImmediateVolume(userTargetVolume)
+
         val localFile = resolveLocalFile(pathOrUri)
         val cleanPath = if (localFile != null) {
             DesktopChunkStreamProxy.wrapLocalFile(localFile)
@@ -199,7 +206,6 @@ object DesktopAudioBackend {
                 pathOrUri.startsWith("file:/") -> pathOrUri.removePrefix("file:")
                 else -> pathOrUri
             }
-            // Route online HTTP/HTTPS streams through our Spotify-style 9-Second Chunk Proxy
             DesktopChunkStreamProxy.wrapUrlIfNeeded(rawCleanPath)
         }
 
@@ -216,7 +222,6 @@ object DesktopAudioBackend {
                 if (startPositionMs > 0L) {
                     mediaPlayer?.controls()?.setTime(startPositionMs)
                 }
-                // VLC resets rate per media; carry the Audio Lab speed over.
                 if (abs(currentRate - 1f) > 0.001f) {
                     try { mediaPlayer?.controls()?.setRate(currentRate) } catch (_: Exception) {}
                 }
@@ -225,23 +230,11 @@ object DesktopAudioBackend {
                 println("[DesktopAudioBackend] Error playing via VLC: ${e.message}")
             }
         }
-        // Fallback simulation timer
         simulatedStartTime = System.currentTimeMillis() - startPositionMs
         isSimulatedPlaying = true
         onPlayingChangedCallback?.invoke(true)
     }
 
-    /**
-     * Switches VLC to its callback audio output: PCM streams through the Kotlin DSP chain.
-     *
-     * CRITICAL FIX FOR "FATA HUA SPEAKER" (AUDIO DISTORTION):
-     * 1. In vlcj's `DefaultAudioCallbackAdapter(blockSize)`, the 3rd parameter to `onPlay` is
-     *    `sampleCount` (number of stereo frames), while `samples` is allocated with
-     *    `sampleCount * blockSize` bytes (`sampleCount * 4` bytes). Passing `sampleCount` as
-     *    `byteCount` previously dropped 75% of every audio frame and misaligned odd byte counts!
-     * 2. `line.open` buffer size is now properly divided by 1000 (`~150 ms` = 28,800 bytes aligned
-     *    to 4-byte stereo frames) instead of 23 MB (120 seconds).
-     */
     private fun enableCallbackAudio() {
         val player = requireNotNull(mediaPlayer)
         DesktopMyPlayerDspPipeline.install()
@@ -249,7 +242,6 @@ object DesktopAudioBackend {
             CALLBACK_RATE.toFloat(), 16, CALLBACK_CHANNELS, true, false
         )
         val line = AudioSystem.getSourceDataLine(lineFormat)
-        // ~150 ms hardware buffer aligned to 4-byte stereo frames: smooth glitch-free playback & snappy pause/seek
         val bufferBytes = (((CALLBACK_RATE * BLOCK_ALIGN * 150) / 1000) / BLOCK_ALIGN) * BLOCK_ALIGN
         line.open(lineFormat, bufferBytes)
         line.start()
@@ -262,7 +254,6 @@ object DesktopAudioBackend {
                 pts: Long
             ) {
                 try {
-                    // `samples` length is `sampleCount * BLOCK_ALIGN` bytes; ensure strict 4-byte stereo frame alignment.
                     val rawBytes = if (sampleCount > 0) {
                         minOf(samples.size, sampleCount * BLOCK_ALIGN)
                     } else {
@@ -317,9 +308,31 @@ object DesktopAudioBackend {
 
     fun pause() {
         isPaused = true
+        pauseFadeJob?.cancel()
         if (isVlcAvailable && mediaPlayer != null) {
+            if (MyPlayerAudioFxDspBridge.pauseFadeEnabled) {
+                val fadeMs = (MyPlayerAudioFxDspBridge.pauseFadeDurationSec * 180f).toLong().coerceIn(80L, 450L)
+                val startVol = userTargetVolume.coerceIn(0.05f, 1f)
+                pauseFadeJob = backendScope.launch {
+                    val steps = 8
+                    val stepDelay = (fadeMs / steps).coerceAtLeast(10L)
+                    for (s in 1..steps) {
+                        val p = s.toFloat() / steps.toFloat()
+                        val env = cos(p * (PI / 2.0)).toFloat()
+                        applyImmediateVolume(startVol * env)
+                        delay(stepDelay)
+                    }
+                    try {
+                        mediaPlayer?.controls()?.setPause(true)
+                    } catch (_: Exception) {
+                        try { mediaPlayer?.controls()?.pause() } catch (_: Exception) {}
+                    }
+                    applyImmediateVolume(startVol)
+                }
+                return
+            }
             try {
-                mediaPlayer?.controls()?.pause()
+                mediaPlayer?.controls()?.setPause(true)
                 return
             } catch (e: Exception) {
                 println("[DesktopAudioBackend] Error pausing VLC: ${e.message}")
@@ -334,9 +347,28 @@ object DesktopAudioBackend {
 
     fun resume() {
         isPaused = false
+        pauseFadeJob?.cancel()
         if (isVlcAvailable && mediaPlayer != null) {
             try {
+                val targetVol = userTargetVolume.coerceIn(0.05f, 1f)
+                if (MyPlayerAudioFxDspBridge.pauseFadeEnabled) {
+                    applyImmediateVolume(0.05f)
+                }
                 mediaPlayer?.controls()?.play()
+                if (MyPlayerAudioFxDspBridge.pauseFadeEnabled) {
+                    val fadeMs = (MyPlayerAudioFxDspBridge.pauseFadeDurationSec * 180f).toLong().coerceIn(80L, 450L)
+                    pauseFadeJob = backendScope.launch {
+                        val steps = 8
+                        val stepDelay = (fadeMs / steps).coerceAtLeast(10L)
+                        for (s in 1..steps) {
+                            val p = s.toFloat() / steps.toFloat()
+                            val env = sin(p * (PI / 2.0)).toFloat()
+                            applyImmediateVolume(targetVol * env)
+                            delay(stepDelay)
+                        }
+                        applyImmediateVolume(targetVol)
+                    }
+                }
                 return
             } catch (e: Exception) {
                 println("[DesktopAudioBackend] Error resuming VLC: ${e.message}")
@@ -351,6 +383,7 @@ object DesktopAudioBackend {
     }
 
     fun stop() {
+        pauseFadeJob?.cancel()
         isPaused = false
         currentPath = null
         if (isVlcAvailable && mediaPlayer != null) {
@@ -378,17 +411,24 @@ object DesktopAudioBackend {
         }
     }
 
-    fun setVolume(volume: Float) {
+    private fun applyImmediateVolume(volume: Float) {
+        val clamped = volume.coerceIn(0f, 1f)
         if (DesktopMyPlayerDspPipeline.isCallbackMode) {
-            DesktopMyPlayerDspPipeline.setPlayerVolume(volume)
+            DesktopMyPlayerDspPipeline.setPlayerVolume(clamped)
             return
         }
         if (isVlcAvailable && mediaPlayer != null) {
             try {
-                val vlcVolume = (volume * 100).toInt().coerceIn(0, 100)
+                val vlcVolume = (clamped * 100).toInt().coerceIn(0, 100)
                 mediaPlayer?.audio()?.setVolume(vlcVolume)
             } catch (_: Exception) {}
         }
+    }
+
+    fun setVolume(volume: Float) {
+        val clamped = volume.coerceIn(0f, 1f)
+        userTargetVolume = clamped
+        applyImmediateVolume(clamped)
     }
 
     fun getPosition(): Long {
@@ -461,7 +501,6 @@ object DesktopAudioBackend {
                 val equalizer = Equalizer(VLC_EQ_BAND_COUNT)
                 val amps = foldIsoGainsToVlcBins(eqBandGains.takeIf { eqEnabled })
                 val maxBoost = amps.maxOrNull()?.coerceAtLeast(0f) ?: 0f
-                // Automatic anti-clipping headroom when EQ bands are boosted
                 val safePreamp = (loudnessPreampDb - maxBoost * 0.55f).coerceIn(VLC_AMP_MIN_DB, 6f)
                 equalizer.setPreamp(safePreamp)
                 for (bin in 0 until VLC_EQ_BAND_COUNT) {
@@ -506,6 +545,7 @@ object DesktopAudioBackend {
 
     fun release() {
         try {
+            pauseFadeJob?.cancel()
             val player = mediaPlayer
             val factory = mediaPlayerFactory
             val line = soundLine

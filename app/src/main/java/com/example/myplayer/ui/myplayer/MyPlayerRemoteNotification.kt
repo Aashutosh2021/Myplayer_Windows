@@ -28,9 +28,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.myplayer.ui.theme.NeonLimePrimary
-import com.example.myplayer.ui.theme.OnNeonLime
 import kotlinx.coroutines.*
 import org.json.JSONObject
+import java.awt.SystemTray
+import java.awt.Toolkit
+import java.awt.TrayIcon
+import java.awt.image.BufferedImage
 import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
@@ -54,11 +57,11 @@ object MyPlayerRemoteNotificationManager {
     private const val FIRESTORE_PROJECT_ID = "myplayer-660ee"
     private const val FIRESTORE_NOTIFS_URL =
         "https://firestore.googleapis.com/v1/projects/$FIRESTORE_PROJECT_ID/databases/(default)/documents/notifications?pageSize=20"
-    private const val CHANNEL_ID = "myplayer_remote_alerts"
     private const val PREFS_NAME = "mochy_remote_notifs_prefs"
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     @Volatile private var pollingStarted = false
+    @Volatile private var trayIcon: TrayIcon? = null
 
     var enabled by mutableStateOf(true)
     var highlightDonateSection by mutableStateOf(false)
@@ -70,8 +73,6 @@ object MyPlayerRemoteNotificationManager {
 
     fun startAutoPolling(context: Context) {
         val appCtx = context.applicationContext
-        // shortcut: the Android status-bar notification stack is not portable; popups and the
-        // notification center carry all desktop alerts — restore with a Win32 toast helper.
         if (pollingStarted) return
         pollingStarted = true
 
@@ -92,6 +93,34 @@ object MyPlayerRemoteNotificationManager {
         }
     }
 
+    /**
+     * Displays a native Windows Desktop System Tray Toast balloon notification when
+     * `showSystemNotification` is enabled on a remote push from `admin.html`.
+     */
+    private fun showWindowsSystemTrayNotification(notif: MyPlayerRemoteNotification) {
+        try {
+            if (!SystemTray.isSupported()) return
+            val tray = SystemTray.getSystemTray()
+            var icon = trayIcon
+            if (icon == null) {
+                val img = runCatching {
+                    val resUrl = MyPlayerRemoteNotificationManager::class.java.getResource("/drawable/app_icon_spark.png")
+                    if (resUrl != null) Toolkit.getDefaultToolkit().getImage(resUrl) else null
+                }.getOrNull() ?: BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB)
+                icon = TrayIcon(img, "MyPlayer").apply {
+                    isImageAutoSize = true
+                }
+                tray.add(icon)
+                trayIcon = icon
+            }
+            icon.displayMessage(
+                "${notif.category} • ${notif.title}",
+                notif.message,
+                TrayIcon.MessageType.INFO
+            )
+        } catch (_: Throwable) {}
+    }
+
     suspend fun fetchNotificationsNow(context: Context, isManualCheck: Boolean = false) {
         try {
             val conn = (URL(FIRESTORE_NOTIFS_URL).openConnection() as HttpURLConnection).apply {
@@ -109,7 +138,7 @@ object MyPlayerRemoteNotificationManager {
                 return
             }
 
-            val bodyText = conn.inputStream.bufferedReader().use { it.readText() }
+            val bodyText = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
             val root = JSONObject(bodyText)
             val docs = root.optJSONArray("documents")
             val parsedList = mutableListOf<MyPlayerRemoteNotification>()
@@ -167,11 +196,13 @@ object MyPlayerRemoteNotificationManager {
                     prefs.edit().putStringSet("seen_notif_ids", seenIds).apply()
                     unreadCount = sorted.count { it.id !in seenIds }
 
+                    if (newestUnseen.showSystemNotification) {
+                        scope.launch { showWindowsSystemTrayNotification(newestUnseen) }
+                    }
                     if (newestUnseen.showInAppPopup) {
                         activeRemotePopup = newestUnseen
                     }
                 } else if (isManualCheck && sorted.isNotEmpty()) {
-                    // When user manually taps "Check Now" in Settings, preview the latest notification
                     activeRemotePopup = sorted.first()
                 }
             }
@@ -197,7 +228,6 @@ fun MyPlayerRemoteNotificationPopupDialog(
 ) {
     val context = LocalContext.current
 
-    // Force user to read: Cannot dismiss by clicking outside or pressing back button!
     Dialog(
         onDismissRequest = { /* Forced read: cannot dismiss outside without tapping action button */ },
         properties = DialogProperties(
@@ -303,7 +333,7 @@ fun MyPlayerRemoteNotificationPopupDialog(
                         .height(50.dp)
                 ) {
                     Text(
-                        text = notification.buttonText.ifBlank { "OK, Got It! ðŸ‘" },
+                        text = notification.buttonText.ifBlank { "OK, Got It! 👍" },
                         fontSize = 14.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
@@ -434,7 +464,7 @@ fun MyPlayerRemoteNotificationsCenterScreen(
                         modifier = Modifier.padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text("ðŸ””", fontSize = 32.sp)
+                        Text("🔔", fontSize = 32.sp)
                         Spacer(Modifier.height(8.dp))
                         Text(
                             text = "No remote notifications yet",
@@ -444,7 +474,7 @@ fun MyPlayerRemoteNotificationsCenterScreen(
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            text = "Push a notification from https://myplayer-660ee.web.app/admin.html and it will appear here and in your Android status bar automatically!",
+                            text = "Push a notification from https://myplayer-660ee.web.app/admin.html and it will appear here and in your Windows system tray automatically!",
                             fontSize = 12.5.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
@@ -495,7 +525,7 @@ fun MyPlayerRemoteNotificationsCenterScreen(
                         if (item.actionUrl.isNotBlank()) {
                             Spacer(Modifier.height(10.dp))
                             Text(
-                                text = "${item.buttonText} â†’",
+                                text = "${item.buttonText} →",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MyPlayerAccentGreen,
@@ -523,5 +553,3 @@ fun MochyRemoteNotificationsCenterScreen(
     mochyState: MyPlayerUiStateHolder,
     onBack: () -> Unit
 ) = MyPlayerRemoteNotificationsCenterScreen(mochyState, onBack)
-
-

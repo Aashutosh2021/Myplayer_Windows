@@ -1,4 +1,4 @@
-﻿package com.example.myplayer.ui.myplayer
+package com.example.myplayer.ui.myplayer
 
 import android.content.Context
 import com.example.myplayer.myplayerfx.AudioFxService
@@ -9,14 +9,14 @@ import com.example.myplayer.myplayerfx.audio.ReverbParams
 import com.example.myplayer.myplayerfx.audio.VolumeCurve
 import com.example.myplayer.myplayerfx.audio.SpatialMode
 import com.example.myplayer.myplayerfx.audio.SpatialParams
+import com.example.myplayer.playback.dsp.MasterAudioDspProcessor
 import kotlin.math.pow
 
 /**
- * Audio Lab settings holder. The DSP itself is MyPlayer's own chain (package myplayerfx), running inside
- * the ExoPlayer sink: spatial/surround/mono -> reverb -> loudness, plus the volume curve / ReplayGain.
- * The equalizer is MyPlayer's own (15-band, MasterAudioDspProcessor); setEq() only remembers the UI values.
- * This object turns the Compose UI state into MyPlayer's parameter objects and hands them to [AudioFxService];
- * the audio processors read those at the start of every buffer, so every slider is live.
+ * Real-time Audio Lab DSP Bridge.
+ * Connects the Compose Audio Lab UI (10-Band Rainbow Equalizer, AutoEQ, Reverb, Loudness,
+ * Spatial 3D, Dolby Atmos Surround, Playback Speed/Pitch, Exponential Volume, and Apple-style
+ * Crossfade) directly to [MasterAudioDspProcessor], [AudioFxService], and [MusicService].
  */
 object MyPlayerAudioFxDspBridge {
     // ---- 0. Equalizer (10 bands, +-12 dB) ----
@@ -56,6 +56,14 @@ object MyPlayerAudioFxDspBridge {
     /** MyPlayer volume curve (power 2), applied by MyPlayerVolumeSink. */
     @Volatile var exponentialVolumeEnabled: Boolean = false
 
+    // ---- 4. Apple-Style Crossfade & Pause Fade ----
+    @Volatile var crossfadeEnabled: Boolean = false
+    @Volatile var crossfadeSeconds: Float = 5.0f
+    @Volatile var keepGaplessAlbums: Boolean = true
+    @Volatile var pauseFadeEnabled: Boolean = true
+    @Volatile var pauseFadeSeconds: Float = 2.0f
+    val pauseFadeDurationSec: Float get() = pauseFadeSeconds
+
     // ---- Speed / pitch: applied through ExoPlayer PlaybackParameters ----
     private var lastSpeed = 1.0f
     private var lastPitch = 1.0f
@@ -67,19 +75,51 @@ object MyPlayerAudioFxDspBridge {
             value?.invoke(lastSpeed, lastPitch)
         }
 
+    var onUpdateCrossfadeConfig: ((enabled: Boolean, seconds: Int) -> Unit)? = null
+
     private var audioFx: AudioFxService? = null
+    private var masterDsp: MasterAudioDspProcessor? = null
 
     /** Called once when the player is built; whatever the UI already set is pushed right away. */
-    fun attach(fx: AudioFxService) {
+    fun attach(fx: AudioFxService, dsp: MasterAudioDspProcessor? = null) {
         audioFx = fx
+        if (dsp != null) {
+            masterDsp = dsp
+        }
         pushFx()
+        pushEqToMasterDsp()
     }
 
-    /** MyPlayer's own equalizer owns the EQ now; kept so the MyPlayer screens still compile. */
+    fun attachMasterDsp(dsp: MasterAudioDspProcessor) {
+        masterDsp = dsp
+        pushEqToMasterDsp()
+    }
+
+    /** Applies the 10-band Rainbow Equalizer & AutoEQ directly to MasterAudioDspProcessor! */
     fun setEq(enabled: Boolean, gains10: List<Float>, preampDb: Float) {
         eqGainsDb = FloatArray(10) { gains10.getOrElse(it) { 0f }.coerceIn(-12f, 12f) }
-        eqPreampDb = preampDb
+        eqPreampDb = preampDb.coerceIn(-12f, 12f)
         eqEnabled = enabled
+        pushEqToMasterDsp()
+    }
+
+    
+    val isAnyCrossfadeActive: Boolean
+        get() = crossfadeEnabled
+
+    fun getInterpolated15BandGains(): FloatArray {
+        return MasterAudioDspProcessor.map10BandsTo15Bands(eqGainsDb)
+    }
+
+    fun getEqGains10(): FloatArray = eqGainsDb.clone()
+
+    private fun pushEqToMasterDsp() {
+        masterDsp?.updateFromAudioLab10Band(
+            enabled = eqEnabled,
+            gains10 = eqGainsDb,
+            preampDb = eqPreampDb,
+            autoPreamp = eqAutoPreamp
+        )
     }
 
     fun syncFromUiState(state: MyPlayerUiStateHolder, loudnessPreset: MyPlayerLoudnessPreset = MyPlayerLoudnessPreset.PUNCHY) {
@@ -105,6 +145,20 @@ object MyPlayerAudioFxDspBridge {
         monoEnabled = state.monoAudio
         dolbySurroundEnabled = state.dolbyAtmosSurround
         exponentialVolumeEnabled = state.exponentialVolume
+
+        // Sync Crossfade settings from Audio Lab / Onboarding / Tour
+        val xfadeOn = state.autoCrossfade || state.manualCrossfade
+        val xfadeSec = state.crossfadeLengthSec.coerceIn(1f, 12f)
+        val xfadeChanged = (xfadeOn != crossfadeEnabled) || (xfadeSec != crossfadeSeconds)
+        crossfadeEnabled = xfadeOn
+        crossfadeSeconds = xfadeSec
+        keepGaplessAlbums = state.keepGaplessAlbums
+        pauseFadeEnabled = state.enablePauseFade
+        pauseFadeSeconds = state.pauseFadeLengthSec
+        if (xfadeChanged) {
+            onUpdateCrossfadeConfig?.invoke(xfadeOn, xfadeSec.toInt().coerceIn(1, 12))
+        }
+
         pushFx()
 
         val spd = state.playbackSpeed.coerceIn(0.25f, 3.0f)
@@ -143,9 +197,10 @@ object MyPlayerAudioFxDspBridge {
         loudnessCompression = p.getFloat("fx_loud_comp", loudnessCompression)
         speakerAngleDeg = p.getFloat("fx_speaker_angle", speakerAngleDeg)
         pushFx()
+        pushEqToMasterDsp()
     }
 
-    private fun pushFx() {
+    fun pushFx() {
         val fx = audioFx ?: return
         fx.reverb = ReverbParams(
             reverbEnabled, reverbMix, reverbRoomSize, reverbDamping, reverbWet,
@@ -167,6 +222,4 @@ object MyPlayerAudioFxDspBridge {
         val curve = VolumeCurve(enabled = exponentialVolumeEnabled)
         if (curve != fx.volumeCurve) fx.volumeCurve = curve
     }
-
 }
-

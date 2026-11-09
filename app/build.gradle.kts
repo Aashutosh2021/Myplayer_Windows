@@ -52,6 +52,7 @@ compose.desktop {
                 "jdk.crypto.ec"
             )
             windows {
+                iconFile = project.file("icons/MyPlayer.ico")
                 menuGroup = "MyPlayer"
                 upgradeUuid = "68c22756-3474-4ec5-b006-258d4a9ec110"
                 dirChooser = true

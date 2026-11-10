@@ -293,6 +293,13 @@ object AppContainer {
         register(com.example.myplayer.playback.dsp.MasterAudioDspProcessor::class.java, centralDsp)
         register(com.example.myplayer.playback.dsp.LastWaveDspAudioProcessor::class.java, centralLastWave)
         register(SpatialAudioProcessor::class.java, centralSpatial)
+        MyPlayerAudioFxDspBridge.attach(audioFxService, centralDsp)
+
+        MyPlayerAudioFxDspBridge.onUpdateCrossfadeConfig = { enabled, seconds ->
+            scope.launch {
+                runCatching { audioPlaybackStore.setCrossfade(enabled, seconds) }
+            }
+        }
 
         val audioFeatureManagers = com.example.myplayer.playback.AudioFeatureManagers(okHttpClient)
         register(com.example.myplayer.playback.AudioFeatureManagers::class.java, audioFeatureManagers)
@@ -303,7 +310,12 @@ object AppContainer {
                 scope = scope,
                 player = androidx.media3.session.MediaController.getShared(),
                 isEnabled = { masterAudioState.crossfadeEnabled || MyPlayerAudioFxDspBridge.isAnyCrossfadeActive },
-                crossfadeDurationSec = masterAudioState.crossfadeSeconds
+                crossfadeDurationSec = masterAudioState.crossfadeSeconds,
+                crossfadeSecondsProvider = {
+                    if (MyPlayerAudioFxDspBridge.isAnyCrossfadeActive) MyPlayerAudioFxDspBridge.crossfadeSeconds
+                    else masterAudioState.crossfadeSeconds.toFloat()
+                },
+                onTriggerNextTrack = { musicController.skipToNext() }
             )
         } catch (e: Throwable) {
             println("[AppContainer] Crossfade monitor unavailable: ${e.message}")

@@ -588,6 +588,15 @@ fun NowPlayingScreen(
                     .weight(0.54f)
                     .fillMaxHeight()
             ) {
+                MyPlayerAnimatedCanvasOverlay(
+                    enabled = myplayerState.enableAnimatedCanvas,
+                    isPlaying = isPlaying,
+                    modifier = Modifier.fillMaxSize()
+                )
+                MyPlayerAtmosphereBlurBox(
+                    state = myplayerState,
+                    modifier = Modifier.fillMaxSize()
+                )
                 if (myplayerState.playerStyle != PlayerStyleMode.RADIAL_MYPLAYER) {
                     // Render Turntable, Poster, Timeline, Lyrics Stage, or Default inside the Right Half-Screen!
                     Box(
@@ -771,16 +780,31 @@ fun NowPlayingScreen(
 
                                     Spacer(Modifier.height(16.dp))
 
-                                    Text(
-                                        text = title ?: "No Song Playing",
-                                        color = Color.White,
-                                        fontSize = 20.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        textAlign = TextAlign.Center,
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center,
                                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
-                                    )
+                                    ) {
+                                        Text(
+                                            text = title ?: "No Song Playing",
+                                            color = Color.White,
+                                            fontSize = 20.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        if (myplayerState.audioFormatBadge) {
+                                            Spacer(Modifier.width(8.dp))
+                                            Box(modifier = Modifier.clickable { showQualityDetails = true }) {
+                                                MyPlayerFormatBadge(
+                                                    formatText = audioQuality.format.ifBlank { "AAC" },
+                                                    sampleRateHz = audioQuality.sampleRateHz
+                                                )
+                                            }
+                                        }
+                                    }
 
                                     Spacer(Modifier.height(4.dp))
 

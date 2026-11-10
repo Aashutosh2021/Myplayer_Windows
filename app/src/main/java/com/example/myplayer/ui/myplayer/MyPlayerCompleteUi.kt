@@ -339,34 +339,39 @@ import kotlin.random.Random
 
 
 
-val MyPlayerBlack: Color get() = if (ThemeState.isDarkMode) Color(0xFF070709) else Color(0xFFF7F8FA)
+enum class MyPlayerAccentOption(val label: String, val color: Color) {
+    NEON_GREEN("Neon Lime", Color(0xFF38E54D)),
+    ELECTRIC_PURPLE("Electric Violet", Color(0xFF8B5CF6)),
+    OCEAN_CYAN("Ocean Cyan", Color(0xFF38BDF8)),
+    SUNSET_CORAL("Sunset Rose", Color(0xFFFF5E7E)),
+    ROYAL_GOLD("Royal Gold", Color(0xFFF59E0B)),
+    PURE_EDITORIAL("Pure Silver", Color(0xFFE2E8F0))
+}
 
+object MyPlayerAppearanceThemeBridge {
+    var amoledBlack by mutableStateOf(false)
+    var accentOption by mutableStateOf(MyPlayerAccentOption.NEON_GREEN)
+}
 
+val MyPlayerBlack: Color get() = if (ThemeState.isDarkMode) {
+    if (MyPlayerAppearanceThemeBridge.amoledBlack) Color(0xFF000000) else Color(0xFF070709)
+} else Color(0xFFF7F8FA)
 
-val MyPlayerSurface: Color get() = if (ThemeState.isDarkMode) Color(0xFF131318) else Color(0xFFFFFFFF)
+val MyPlayerSurface: Color get() = if (ThemeState.isDarkMode) {
+    if (MyPlayerAppearanceThemeBridge.amoledBlack) Color(0xFF09090C) else Color(0xFF131318)
+} else Color(0xFFFFFFFF)
 
+val MyPlayerSurfaceHigh: Color get() = if (ThemeState.isDarkMode) {
+    if (MyPlayerAppearanceThemeBridge.amoledBlack) Color(0xFF121218) else Color(0xFF1E1E26)
+} else Color(0xFFEFEFF2)
 
-
-val MyPlayerSurfaceHigh: Color get() = if (ThemeState.isDarkMode) Color(0xFF1E1E26) else Color(0xFFEFEFF2)
-
-
-
-val MyPlayerCardBorder: Color get() = if (ThemeState.isDarkMode) Color(0xFF1F1F27) else Color(0xFFE2E2E8)
-
-
+val MyPlayerCardBorder: Color get() = if (ThemeState.isDarkMode) {
+    if (MyPlayerAppearanceThemeBridge.amoledBlack) Color(0xFF1A1A22) else Color(0xFF1F1F27)
+} else Color(0xFFE2E2E8)
 
 val MyPlayerTextPrimary: Color get() = if (ThemeState.isDarkMode) Color(0xFFF5F5F7) else Color(0xFF17171C)
-
-
-
 val MyPlayerTextSecondary: Color get() = if (ThemeState.isDarkMode) Color(0xFF9A9AA6) else Color(0xFF6B6B76)
-
-
-
-val MyPlayerAccentGreen = Color(0xFF38E54D)
-
-
-
+val MyPlayerAccentGreen: Color get() = MyPlayerAppearanceThemeBridge.accentOption.color
 val MyPlayerAccentPurple = Color(0xFF8B5CF6)
 
 
@@ -685,47 +690,23 @@ class MyPlayerUiStateHolder(context: Context) {
 
 
 
-    var lyricsShader by mutableStateOf(prefs.getBoolean("lyrics_shader", false))
-
-
-
+    var lyricsShader by mutableStateOf(prefs.getBoolean("lyrics_shader", true))
     var highQualityBloom by mutableStateOf(prefs.getBoolean("hq_bloom", true))
-
-
-
     var audioFormatBadge by mutableStateOf(prefs.getBoolean("audio_format_badge", true))
-
-
-
-    var showSampleRate by mutableStateOf(prefs.getBoolean("show_sample_rate", false))
-
-
-
+    var showSampleRate by mutableStateOf(prefs.getBoolean("show_sample_rate", true))
     var enableYoutubeBg by mutableStateOf(prefs.getBoolean("yt_bg", false))
-
-
-
     var enableAnimatedCanvas by mutableStateOf(prefs.getBoolean("anim_canvas", true))
-
-
-
     var canvasWifiOnly by mutableStateOf(prefs.getBoolean("canvas_wifi_only", true))
-
-
-
     var glassBlur by mutableStateOf(prefs.getBoolean("glass_blur", true))
-
-
-
     var progressiveBlur by mutableStateOf(prefs.getBoolean("progressive_blur", true))
-
-
-
     var blurStrengthPx by mutableFloatStateOf(prefs.getFloat("blur_strength", 25f))
-
-
-
     var smoothAnimations by mutableStateOf(prefs.getBoolean("smooth_animations", true))
+    var amoledBlack by mutableStateOf(prefs.getBoolean("amoled_black", false))
+    var accentOption by mutableStateOf(
+        runCatching {
+            MyPlayerAccentOption.valueOf(prefs.getString("accent_option", MyPlayerAccentOption.NEON_GREEN.name)!!)
+        }.getOrDefault(MyPlayerAccentOption.NEON_GREEN)
+    )
 
     // Funny Mood & Vibe-Check Pop-Up Settings
     private var _vibePopupEnabled by mutableStateOf(prefs.getBoolean("vibe_popup_enabled", true))
@@ -946,7 +927,7 @@ class MyPlayerUiStateHolder(context: Context) {
 
 
 
-    var autoCrossfade by mutableStateOf(false)
+    var autoCrossfade by mutableStateOf(true)
 
 
 
@@ -983,15 +964,43 @@ class MyPlayerUiStateHolder(context: Context) {
 
 
         loadAudioLabFromPrefs()
-
+        MyPlayerAppearanceThemeBridge.amoledBlack = amoledBlack
+        MyPlayerAppearanceThemeBridge.accentOption = accentOption
         MyPlayerVibeCheckManager.enabled = _vibePopupEnabled
         MyPlayerVibeCheckManager.thresholdMinutes = _vibePopupIntervalMin
         MyPlayerRemoteNotificationManager.enabled = _remoteNotificationsEnabled
-
         MyPlayerRemoteNotificationManager.startAutoPolling(context.applicationContext)
+    }
 
+    fun appearanceSignature(): List<Any?> = listOf(
+        playerStyle, lyricsAnimStyle, lyricsShader, highQualityBloom,
+        audioFormatBadge, showSampleRate, enableYoutubeBg, enableAnimatedCanvas,
+        canvasWifiOnly, glassBlur, progressiveBlur, blurStrengthPx,
+        smoothAnimations, amoledBlack, accentOption
+    )
 
-
+    fun saveAppearanceToPrefs() {
+        MyPlayerAppearanceThemeBridge.amoledBlack = amoledBlack
+        MyPlayerAppearanceThemeBridge.accentOption = accentOption
+        try {
+            prefs.edit()
+                .putString("player_style", playerStyle.name)
+                .putInt("lyrics_anim_style", lyricsAnimStyle)
+                .putBoolean("lyrics_shader", lyricsShader)
+                .putBoolean("hq_bloom", highQualityBloom)
+                .putBoolean("audio_format_badge", audioFormatBadge)
+                .putBoolean("show_sample_rate", showSampleRate)
+                .putBoolean("yt_bg", enableYoutubeBg)
+                .putBoolean("anim_canvas", enableAnimatedCanvas)
+                .putBoolean("canvas_wifi_only", canvasWifiOnly)
+                .putBoolean("glass_blur", glassBlur)
+                .putBoolean("progressive_blur", progressiveBlur)
+                .putFloat("blur_strength", blurStrengthPx)
+                .putBoolean("smooth_animations", smoothAnimations)
+                .putBoolean("amoled_black", amoledBlack)
+                .putString("accent_option", accentOption.name)
+                .apply()
+        } catch (_: Exception) {}
     }
 
 
@@ -9604,26 +9613,13 @@ fun MyPlayerMultiStyleNowPlayingScreen(
 
 
         PlayerStyleMode.DEFAULT -> {
-
-
-
             Box(
-
-
-
                 modifier = Modifier
-
-
-
                     .fillMaxSize()
-
-
-
-                    .background(Color(if (isDarkPlayer) 0xFF08141E else 0xFFF4F6F9))
-
-
-
+                    .background(if (isDarkPlayer) MyPlayerBlack else Color(0xFFF4F6F9))
             ) {
+                MyPlayerAnimatedCanvasOverlay(enabled = myplayerState.enableAnimatedCanvas, isPlaying = isPlaying)
+                MyPlayerAtmosphereBlurBox(state = myplayerState)
 
 
 
@@ -9959,7 +9955,7 @@ fun MyPlayerMultiStyleNowPlayingScreen(
 
 
 
-                                        MyPlayerFormatBadge(audioQuality.format.ifBlank { "AAC" })
+                                        MyPlayerFormatBadge(audioQuality.format.ifBlank { "AAC" }, audioQuality.sampleRateHz)
 
 
 
@@ -11079,7 +11075,7 @@ fun MyPlayerMultiStyleNowPlayingScreen(
 
 
 
-                                    MyPlayerFormatBadge(audioQuality.format.ifBlank { "AAC" })
+                                    MyPlayerFormatBadge(audioQuality.format.ifBlank { "AAC" }, audioQuality.sampleRateHz)
 
 
 
@@ -11532,34 +11528,15 @@ fun MyPlayerMultiStyleNowPlayingScreen(
 
 
         PlayerStyleMode.POSTER -> {
-
-
-
             Box(
-
-
-
                 modifier = Modifier
-
-
-
                     .fillMaxSize()
-
-
-
-                    .background(if (isDarkPlayer) Color(0xFF06131C) else Color(0xFFF5F7FA))
-
-
-
+                    .background(if (isDarkPlayer) MyPlayerBlack else Color(0xFFF5F7FA))
                     .statusBarsPadding()
-
-
-
                     .navigationBarsPadding()
-
-
-
             ) {
+                MyPlayerAnimatedCanvasOverlay(enabled = myplayerState.enableAnimatedCanvas, isPlaying = isPlaying)
+                MyPlayerAtmosphereBlurBox(state = myplayerState)
 
 
 
@@ -17008,65 +16985,30 @@ fun MyPlayerSecondaryPillButton(
 
 
 @Composable
-
-
-
-fun MyPlayerFormatBadge(formatText: String) {
-
-
-
+fun MyPlayerFormatBadge(formatText: String, sampleRateHz: Int? = null) {
+    val myplayerState = rememberMyPlayerUiStateHolder()
+    if (!myplayerState.audioFormatBadge) return
     val isDark = ThemeState.isDarkMode
-
-
-
+    val cleanFormat = formatText.ifBlank { "AAC" }.uppercase()
+    val rateSuffix = if (myplayerState.showSampleRate) {
+        val hz = sampleRateHz?.takeIf { it > 0 } ?: 48000
+        val khz = hz / 1000.0
+        val khzStr = if (khz % 1.0 == 0.0) "${khz.toInt()} kHz" else "${"%.1f".format(khz)} kHz"
+        " • $khzStr"
+    } else ""
     Surface(
-
-
-
         shape = RoundedCornerShape(6.dp),
-
-
-
-        color = if (isDark) Color.White.copy(alpha = 0.18f) else Color.Black.copy(alpha = 0.10f)
-
-
-
+        color = if (isDark) MyPlayerAccentGreen.copy(alpha = 0.18f) else Color.Black.copy(alpha = 0.10f),
+        border = BorderStroke(0.8.dp, MyPlayerAccentGreen.copy(alpha = 0.45f))
     ) {
-
-
-
         Text(
-
-
-
-            text = formatText.uppercase(),
-
-
-
+            text = "$cleanFormat$rateSuffix",
             fontSize = 10.sp,
-
-
-
             fontWeight = FontWeight.ExtraBold,
-
-
-
-            color = if (isDark) Color.White else CharcoalPrimary,
-
-
-
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-
-
-
+            color = if (isDark) MyPlayerAccentGreen else CharcoalPrimary,
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
         )
-
-
-
     }
-
-
-
 }
 
 
@@ -19602,131 +19544,7 @@ fun MyPlayerSettingsHubScreen(
 
 
 
-                // Recommended Item Card ("Configure Equalizer settings" - 01:34, 04:43)
-
-
-
-                item {
-
-
-
-                    Text("Recommended item", fontSize = 12.sp, color = MyPlayerTextSecondary)
-
-
-
-                    Spacer(Modifier.height(6.dp))
-
-
-
-                    Surface(
-
-
-
-                        shape = RoundedCornerShape(22.dp),
-
-
-
-                        color = MyPlayerSurface,
-
-
-
-                        border = BorderStroke(1.dp, MyPlayerCardBorder),
-
-
-
-                        modifier = Modifier
-
-
-
-                            .fillMaxWidth()
-
-
-
-                            .clickable { subScreen = "equalizer" }
-
-
-
-                    ) {
-
-
-
-                        Row(
-
-
-
-                            modifier = Modifier.padding(16.dp),
-
-
-
-                            verticalAlignment = Alignment.CenterVertically
-
-
-
-                        ) {
-
-
-
-                            Box(
-
-
-
-                                modifier = Modifier.size(44.dp).clip(CircleShape).background(MyPlayerSurfaceHigh),
-
-
-
-                                contentAlignment = Alignment.Center
-
-
-
-                            ) {
-
-
-
-                                Icon(Icons.Default.GraphicEq, null, tint = Color.White)
-
-
-
-                            }
-
-
-
-                            Spacer(Modifier.width(14.dp))
-
-
-
-                            Column {
-
-
-
-                                Text("Configure Equalizer settings", fontWeight = FontWeight.Bold, color = Color.White)
-
-
-
-                                Text("settings>audio lab", fontSize = 12.sp, color = MyPlayerTextSecondary)
-
-
-
-                            }
-
-
-
-                        }
-
-
-
-                    }
-
-
-
-                }
-
-
-
-
-
-
-
-                // Settings Category Cards (General, Appearance, Playback, Gesture, Storage, Audio Lab, Modules, Integrations)
+                                // Settings Category Cards (General, Appearance, Playback, Gesture, Storage, Audio Lab, Modules, Integrations)
 
 
 
@@ -19897,592 +19715,553 @@ fun MyPlayerSettingsHubScreen(
 
 
 @Composable
-
-
-
-fun MyPlayerAppearanceSettingsScreen(
-
-
-
-    myplayerState: MyPlayerUiStateHolder,
-
-
-
-    onOpenStylesPicker: () -> Unit,
-
-
-
-    onBack: () -> Unit
-
-
-
+fun MyPlayerAnimatedCanvasOverlay(
+    enabled: Boolean,
+    isPlaying: Boolean = true,
+    modifier: Modifier = Modifier
 ) {
-
-
-
-    LazyColumn(
-
-
-
-        modifier = Modifier
-
-
-
-            .fillMaxSize()
-
-
-
-            .background(MyPlayerBlack)
-
-
-
-            .statusBarsPadding(),
-
-
-
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
-
-
-
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-
-
-
-    ) {
-
-
-
-        item {
-
-
-
-            IconButton(
-
-
-
-                onClick = onBack,
-
-
-
-                modifier = Modifier.size(42.dp).clip(CircleShape).background(MyPlayerSurface)
-
-
-
-            ) {
-
-
-
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = MyPlayerTextPrimary)
-
-
-
+    if (!enabled) return
+    val infinite = rememberInfiniteTransition(label = "myplayerAnimCanvas")
+    val phase by infinite.animateFloat(
+        initialValue = 0f,
+        targetValue = (2.0 * PI).toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = if (isPlaying) 7500 else 18000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "canvasPhase"
+    )
+    val accent = MyPlayerAccentGreen
+    Canvas(modifier = modifier.fillMaxSize()) {
+        val w = size.width
+        val h = size.height
+        // Flowing aurora orbs
+        val orb1 = Offset(
+            x = w * (0.28f + 0.18f * cos(phase)),
+            y = h * (0.26f + 0.14f * sin(phase * 1.3f))
+        )
+        val orb2 = Offset(
+            x = w * (0.72f + 0.16f * sin(phase * 0.9f)),
+            y = h * (0.44f + 0.15f * cos(phase * 1.1f))
+        )
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(accent.copy(alpha = 0.22f), Color.Transparent),
+                center = orb1,
+                radius = maxOf(w, h) * 0.48f
+            ),
+            radius = maxOf(w, h) * 0.48f,
+            center = orb1
+        )
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(MyPlayerAccentPurple.copy(alpha = 0.18f), Color.Transparent),
+                center = orb2,
+                radius = maxOf(w, h) * 0.44f
+            ),
+            radius = maxOf(w, h) * 0.44f,
+            center = orb2
+        )
+        // Subtle animated soundwave ribbons
+        val ribbonPath = Path().apply {
+            val baseY = h * 0.56f
+            moveTo(0f, baseY)
+            val steps = 28
+            for (i in 1..steps) {
+                val frac = i / steps.toFloat()
+                val x = w * frac
+                val y = baseY + sin(phase * 2f + frac * 6.2f) * (h * 0.045f)
+                lineTo(x, y)
             }
-
-
-
-            Spacer(Modifier.height(10.dp))
-
-
-
-            Text("Appearance", fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, color = MyPlayerTextPrimary)
-
-
-
-            Spacer(Modifier.height(10.dp))
-
-
-
-            Text("Player appearance", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MyPlayerTextSecondary)
-
-
-
         }
-
-
-
-
-
-
-
-        // Customize Player Row -> Opens the 6-Style Pager (including Radial MyPlayer!)
-
-
-
-        item {
-
-
-
-            Surface(
-
-
-
-                shape = RoundedCornerShape(22.dp),
-
-
-
-                color = MyPlayerSurface,
-
-
-
-                border = BorderStroke(1.dp, MyPlayerCardBorder),
-
-
-
-                modifier = Modifier
-
-
-
-                    .fillMaxWidth()
-
-
-
-                    .clickable(onClick = onOpenStylesPicker)
-
-
-
-            ) {
-
-
-
-                Row(
-
-
-
-                    modifier = Modifier.padding(18.dp),
-
-
-
-                    verticalAlignment = Alignment.CenterVertically
-
-
-
-                ) {
-
-
-
-                    Icon(Icons.Default.Album, null, tint = MyPlayerTextPrimary)
-
-
-
-                    Spacer(Modifier.width(14.dp))
-
-
-
-                    Column(modifier = Modifier.weight(1f)) {
-
-
-
-                        Text("Customize player", fontWeight = FontWeight.Bold, color = MyPlayerTextPrimary)
-
-
-
-                        Text(
-
-
-
-                            "Active: ${myplayerState.playerStyle.title} • Tap to switch (Radial, Turntable, Poster...)",
-
-
-
-                            fontSize = 12.sp,
-
-
-
-                            color = NeonLimePrimary
-
-
-
-                        )
-
-
-
-                    }
-
-
-
-                }
-
-
-
-            }
-
-
-
-        }
-
-
-
-
-
-
-
-        // Player & Global Appearance Toggles (02:00 - 02:18)
-
-
-
-        item {
-
-
-
-            Surface(
-
-
-
-                shape = RoundedCornerShape(24.dp),
-
-
-
-                color = MyPlayerSurface,
-
-
-
-                border = BorderStroke(1.dp, MyPlayerCardBorder),
-
-
-
-                modifier = Modifier.fillMaxWidth()
-
-
-
-            ) {
-
-
-
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-
-
-
-                    MyPlayerSwitchRow(
-
-
-
-                        title = "Lyrics Shader",
-
-
-
-                        subtitle = "Glow on sung lyrics",
-
-
-
-                        checked = myplayerState.lyricsShader,
-
-
-
-                        onCheckedChange = { myplayerState.lyricsShader = it }
-
-
-
-                    )
-
-
-
-                    MyPlayerSwitchRow(
-
-
-
-                        title = "High quality bloom",
-
-
-
-                        subtitle = "Extra soft bloom pass on lyrics",
-
-
-
-                        checked = myplayerState.highQualityBloom,
-
-
-
-                        onCheckedChange = { myplayerState.highQualityBloom = it }
-
-
-
-                    )
-
-
-
-                    MyPlayerSwitchRow(
-
-
-
-                        title = "Audio format badge",
-
-
-
-                        subtitle = "What the song is playing as, beside title",
-
-
-
-                        checked = myplayerState.audioFormatBadge,
-
-
-
-                        onCheckedChange = { myplayerState.audioFormatBadge = it }
-
-
-
-                    )
-
-
-
-                    MyPlayerSwitchRow(
-
-
-
-                        title = "Show sample rate",
-
-
-
-                        subtitle = "The stream's sample rate after its format",
-
-
-
-                        checked = myplayerState.showSampleRate,
-
-
-
-                        onCheckedChange = { myplayerState.showSampleRate = it }
-
-
-
-                    )
-
-
-
-                    MyPlayerSwitchRow(
-
-
-
-                        title = "Enable animated canvas",
-
-
-
-                        subtitle = "Looping visuals for supported tracks",
-
-
-
-                        checked = myplayerState.enableAnimatedCanvas,
-
-
-
-                        onCheckedChange = { myplayerState.enableAnimatedCanvas = it }
-
-
-
-                    )
-
-
-
-                }
-
-
-
-            }
-
-
-
-        }
-
-
-
-
-
-
-
-        item {
-
-
-
-            Text("Global Appearance", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MyPlayerTextSecondary)
-
-
-
-            Spacer(Modifier.height(6.dp))
-
-
-
-            Surface(
-
-
-
-                shape = RoundedCornerShape(24.dp),
-
-
-
-                color = MyPlayerSurface,
-
-
-
-                border = BorderStroke(1.dp, MyPlayerCardBorder),
-
-
-
-                modifier = Modifier.fillMaxWidth()
-
-
-
-            ) {
-
-
-
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-
-
-
-                    MyPlayerSwitchRow(
-
-
-
-                        title = "Blur",
-
-
-
-                        subtitle = "Glass blur across player and navigation",
-
-
-
-                        checked = myplayerState.glassBlur,
-
-
-
-                        onCheckedChange = { myplayerState.glassBlur = it }
-
-
-
-                    )
-
-
-
-                    MyPlayerSwitchRow(
-
-
-
-                        title = "Progressive blur",
-
-
-
-                        subtitle = "Smooth progressive gradient blur",
-
-
-
-                        checked = myplayerState.progressiveBlur,
-
-
-
-                        onCheckedChange = { myplayerState.progressiveBlur = it }
-
-
-
-                    )
-
-
-
-                    Column {
-
-
-
-                        Row(
-
-
-
-                            modifier = Modifier.fillMaxWidth(),
-
-
-
-                            horizontalArrangement = Arrangement.SpaceBetween
-
-
-
-                        ) {
-
-
-
-                            Text("Blur strength", fontWeight = FontWeight.Bold, color = MyPlayerTextPrimary)
-
-
-
-                            Text("${myplayerState.blurStrengthPx.toInt()}px", color = MyPlayerTextSecondary)
-
-
-
-                        }
-
-
-
-                        Slider(
-
-
-
-                            value = myplayerState.blurStrengthPx,
-
-
-
-                            onValueChange = { myplayerState.blurStrengthPx = it },
-
-
-
-                            valueRange = 0f..50f
-
-
-
-                        )
-
-
-
-                    }
-
-
-
-                    MyPlayerSwitchRow(
-
-
-
-                        title = "Animation",
-
-
-
-                        subtitle = "Smooth UI transitions and element blurs",
-
-
-
-                        checked = myplayerState.smoothAnimations,
-
-
-
-                        onCheckedChange = { myplayerState.smoothAnimations = it }
-
-
-
-                    )
-
-
-
-                }
-
-
-
-            }
-
-
-
-        }
-
-
-
-        item { Spacer(Modifier.height(90.dp)) }
-
-
-
+        drawPath(
+            path = ribbonPath,
+            color = accent.copy(alpha = 0.16f),
+            style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+        )
     }
-
-
-
 }
 
+@Composable
+fun MyPlayerAtmosphereBlurBox(
+    state: MyPlayerUiStateHolder,
+    modifier: Modifier = Modifier
+) {
+    if (!state.glassBlur && !state.progressiveBlur) return
+    val normStrength = (state.blurStrengthPx / 50f).coerceIn(0f, 1f)
+    if (normStrength <= 0.01f) return
+    val isDark = ThemeState.isDarkMode
+    val tintBase = if (isDark) MyPlayerBlack else Color.White
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(
+                if (state.progressiveBlur) {
+                    Brush.verticalGradient(
+                        colorStops = arrayOf(
+                            0.0f to tintBase.copy(alpha = 0.10f * normStrength),
+                            0.38f to MyPlayerAccentGreen.copy(alpha = 0.06f * normStrength),
+                            0.72f to tintBase.copy(alpha = 0.48f * normStrength),
+                            1.0f to tintBase.copy(alpha = 0.78f * normStrength)
+                        )
+                    )
+                } else {
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            tintBase.copy(alpha = 0.28f * normStrength),
+                            tintBase.copy(alpha = 0.38f * normStrength)
+                        )
+                    )
+                }
+            )
+    )
+}
 
+@Composable
+fun MyPlayerAppearanceSettingsScreen(
+    myplayerState: MyPlayerUiStateHolder,
+    onOpenStylesPicker: () -> Unit,
+    onBack: () -> Unit
+) {
+    val infinite = rememberInfiniteTransition(label = "appearanceShaderPreview")
+    val shaderShift by infinite.animateFloat(
+        initialValue = 0f,
+        targetValue = 600f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 3600, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "shaderShift"
+    )
 
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MyPlayerBlack)
+            .statusBarsPadding(),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.size(42.dp).clip(CircleShape).background(MyPlayerSurface)
+            ) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = MyPlayerTextPrimary)
+            }
+            Spacer(Modifier.height(10.dp))
+            Text("Appearance", fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, color = MyPlayerTextPrimary)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Every setting below updates your player, lyrics & theme live in real time",
+                fontSize = 13.sp,
+                color = MyPlayerTextSecondary
+            )
+        }
 
+        // ── LIVE INTERACTIVE PREVIEW STAGE (Reacts immediately to every toggle & slider!) ──
+        item {
+            val blurRatio = if (myplayerState.glassBlur || myplayerState.progressiveBlur) {
+                (myplayerState.blurStrengthPx / 50f).coerceIn(0f, 1f)
+            } else 0f
+            Surface(
+                shape = RoundedCornerShape(26.dp),
+                color = MyPlayerSurface,
+                border = BorderStroke(1.dp, MyPlayerAccentGreen.copy(alpha = 0.45f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(188.dp)
+                        .clip(RoundedCornerShape(26.dp))
+                        .background(
+                            Brush.linearGradient(
+                                colors = listOf(
+                                    MyPlayerSurfaceHigh,
+                                    MyPlayerBlack,
+                                    MyPlayerSurface
+                                )
+                            )
+                        )
+                ) {
+                    // Animated Canvas live preview
+                    MyPlayerAnimatedCanvasOverlay(
+                        enabled = myplayerState.enableAnimatedCanvas,
+                        isPlaying = true
+                    )
+                    // Blur & Progressive Blur live preview
+                    MyPlayerAtmosphereBlurBox(state = myplayerState)
 
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(18.dp),
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(50),
+                                    color = MyPlayerAccentGreen.copy(alpha = 0.18f),
+                                    border = BorderStroke(1.dp, MyPlayerAccentGreen.copy(alpha = 0.5f))
+                                ) {
+                                    Text(
+                                        text = "LIVE PREVIEW • ${myplayerState.playerStyle.title.uppercase()}",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = MyPlayerAccentGreen,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    )
+                                }
+                                if (myplayerState.glassBlur || myplayerState.progressiveBlur) {
+                                    Text(
+                                        text = "Blur ${(blurRatio * 50).toInt()}px",
+                                        fontSize = 11.sp,
+                                        color = MyPlayerTextSecondary
+                                    )
+                                }
+                            }
+                            if (myplayerState.audioFormatBadge) {
+                                MyPlayerFormatBadge(formatText = "FLAC", sampleRateHz = 96000)
+                            }
+                        }
 
+                        // Center Live Lyrics Shader + High Quality Bloom Preview
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (myplayerState.highQualityBloom) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(0.85f)
+                                        .height(44.dp)
+                                        .clip(RoundedCornerShape(22.dp))
+                                        .background(
+                                            Brush.horizontalGradient(
+                                                colors = listOf(
+                                                    Color.Transparent,
+                                                    MyPlayerAccentGreen.copy(alpha = 0.24f),
+                                                    MyPlayerAccentPurple.copy(alpha = 0.22f),
+                                                    Color.Transparent
+                                                )
+                                            )
+                                        )
+                                )
+                            }
+                            val previewTextStyle = if (myplayerState.lyricsShader) {
+                                androidx.compose.ui.text.TextStyle(
+                                    brush = Brush.linearGradient(
+                                        colors = listOf(
+                                            MyPlayerTextPrimary,
+                                            MyPlayerAccentGreen,
+                                            Color(0xFF38BDF8),
+                                            MyPlayerTextPrimary
+                                        ),
+                                        start = Offset(shaderShift, 0f),
+                                        end = Offset(shaderShift + 260f, 80f)
+                                    ),
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    shadow = if (myplayerState.highQualityBloom) {
+                                        Shadow(
+                                            color = MyPlayerAccentGreen.copy(alpha = 0.75f),
+                                            offset = Offset.Zero,
+                                            blurRadius = 24f
+                                        )
+                                    } else null
+                                )
+                            } else {
+                                androidx.compose.ui.text.TextStyle(
+                                    color = MyPlayerTextPrimary,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    shadow = if (myplayerState.highQualityBloom) {
+                                        Shadow(
+                                            color = MyPlayerAccentGreen.copy(alpha = 0.65f),
+                                            offset = Offset.Zero,
+                                            blurRadius = 22f
+                                        )
+                                    } else null
+                                )
+                            }
+                            Text(
+                                text = "♪ Feel the music come alive in real time ♪",
+                                style = previewTextStyle,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = buildList {
+                                    if (myplayerState.lyricsShader) add("Shader ON")
+                                    if (myplayerState.highQualityBloom) add("Bloom ON")
+                                    if (myplayerState.enableAnimatedCanvas) add("Canvas ON")
+                                    if (myplayerState.smoothAnimations) add("60fps Anim")
+                                }.joinToString(" • ").ifBlank { "Standard Visuals" },
+                                fontSize = 11.sp,
+                                color = MyPlayerTextSecondary
+                            )
+                            Text(
+                                text = "Switch Style →",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MyPlayerAccentGreen,
+                                modifier = Modifier.clickable(onClick = onOpenStylesPicker)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 1. Customize Player Row -> Opens the 6-Style Pager (including Radial MyPlayer!)
+        item {
+            Text("Player appearance", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MyPlayerTextSecondary)
+            Spacer(Modifier.height(6.dp))
+            Surface(
+                shape = RoundedCornerShape(22.dp),
+                color = MyPlayerSurface,
+                border = BorderStroke(1.dp, MyPlayerCardBorder),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenStylesPicker)
+            ) {
+                Row(
+                    modifier = Modifier.padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(MyPlayerAccentGreen.copy(alpha = 0.16f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Album, null, tint = MyPlayerAccentGreen)
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Customize player style", fontWeight = FontWeight.Bold, color = MyPlayerTextPrimary)
+                        Text(
+                            "Active: ${myplayerState.playerStyle.title} • Tap to switch (Radial, Turntable, Poster, Timeline, Lyrics)",
+                            fontSize = 12.sp,
+                            color = MyPlayerAccentGreen
+                        )
+                    }
+                    Icon(Icons.Default.ChevronRight, null, tint = MyPlayerTextSecondary)
+                }
+            }
+        }
+
+        // 2. Player & Lyrics Visual Toggles
+        item {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = MyPlayerSurface,
+                border = BorderStroke(1.dp, MyPlayerCardBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    MyPlayerSwitchRow(
+                        title = "Lyrics Shader",
+                        subtitle = "Animated gradient glow across active sung lyrics",
+                        checked = myplayerState.lyricsShader,
+                        onCheckedChange = {
+                            myplayerState.lyricsShader = it
+                            myplayerState.saveAppearanceToPrefs()
+                        }
+                    )
+                    MyPlayerSwitchRow(
+                        title = "High quality bloom",
+                        subtitle = "Soft neon halo & shadow bloom behind active lyrics",
+                        checked = myplayerState.highQualityBloom,
+                        onCheckedChange = {
+                            myplayerState.highQualityBloom = it
+                            myplayerState.saveAppearanceToPrefs()
+                        }
+                    )
+                    MyPlayerSwitchRow(
+                        title = "Audio format badge",
+                        subtitle = "Show codec badge (FLAC / AAC / OPUS) next to song title",
+                        checked = myplayerState.audioFormatBadge,
+                        onCheckedChange = {
+                            myplayerState.audioFormatBadge = it
+                            myplayerState.saveAppearanceToPrefs()
+                        }
+                    )
+                    MyPlayerSwitchRow(
+                        title = "Show sample rate",
+                        subtitle = "Append stream sample rate (e.g. 48 kHz / 96 kHz) to format badge",
+                        checked = myplayerState.showSampleRate,
+                        onCheckedChange = {
+                            myplayerState.showSampleRate = it
+                            myplayerState.saveAppearanceToPrefs()
+                        }
+                    )
+                    MyPlayerSwitchRow(
+                        title = "Enable animated canvas",
+                        subtitle = "Looping aurora & soundwave visuals behind player artwork",
+                        checked = myplayerState.enableAnimatedCanvas,
+                        onCheckedChange = {
+                            myplayerState.enableAnimatedCanvas = it
+                            myplayerState.saveAppearanceToPrefs()
+                        }
+                    )
+                }
+            }
+        }
+
+        // 3. Theme Mode & Accent Palette
+        item {
+            Text("Theme & Accent Palette", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MyPlayerTextSecondary)
+            Spacer(Modifier.height(6.dp))
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = MyPlayerSurface,
+                border = BorderStroke(1.dp, MyPlayerCardBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    MyPlayerSwitchRow(
+                        title = "Dark Mode",
+                        subtitle = if (ThemeState.isDarkMode) "Night theme active across all screens" else "Day light theme active",
+                        checked = ThemeState.isDarkMode,
+                        onCheckedChange = { ThemeState.setDark(it) }
+                    )
+                    if (ThemeState.isDarkMode) {
+                        MyPlayerSwitchRow(
+                            title = "AMOLED Pitch Black",
+                            subtitle = "Pure #000000 OLED background for maximum contrast",
+                            checked = myplayerState.amoledBlack,
+                            onCheckedChange = {
+                                myplayerState.amoledBlack = it
+                                myplayerState.saveAppearanceToPrefs()
+                            }
+                        )
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Accent Color", fontWeight = FontWeight.Bold, color = MyPlayerTextPrimary, fontSize = 15.sp)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            items(MyPlayerAccentOption.entries) { option ->
+                                val selected = myplayerState.accentOption == option
+                                Surface(
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = if (selected) option.color.copy(alpha = 0.22f) else MyPlayerSurfaceHigh,
+                                    border = BorderStroke(
+                                        width = if (selected) 1.5.dp else 1.dp,
+                                        color = if (selected) option.color else MyPlayerCardBorder
+                                    ),
+                                    modifier = Modifier.clickable {
+                                        myplayerState.accentOption = option
+                                        myplayerState.saveAppearanceToPrefs()
+                                    }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(14.dp)
+                                                .clip(CircleShape)
+                                                .background(option.color)
+                                        )
+                                        Text(
+                                            text = option.label,
+                                            fontSize = 12.sp,
+                                            fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Medium,
+                                            color = if (selected) option.color else MyPlayerTextPrimary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. Global Appearance (Blur, Progressive Blur, Blur Strength, Smooth Animations)
+        item {
+            Text("Global Appearance", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MyPlayerTextSecondary)
+            Spacer(Modifier.height(6.dp))
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = MyPlayerSurface,
+                border = BorderStroke(1.dp, MyPlayerCardBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    MyPlayerSwitchRow(
+                        title = "Blur",
+                        subtitle = "Glass blur across player and navigation",
+                        checked = myplayerState.glassBlur,
+                        onCheckedChange = {
+                            myplayerState.glassBlur = it
+                            myplayerState.saveAppearanceToPrefs()
+                        }
+                    )
+                    MyPlayerSwitchRow(
+                        title = "Progressive blur",
+                        subtitle = "Smooth progressive gradient blur on Now Playing backdrop",
+                        checked = myplayerState.progressiveBlur,
+                        onCheckedChange = {
+                            myplayerState.progressiveBlur = it
+                            myplayerState.saveAppearanceToPrefs()
+                        }
+                    )
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Blur strength", fontWeight = FontWeight.Bold, color = MyPlayerTextPrimary)
+                            Text("${myplayerState.blurStrengthPx.toInt()}px", color = MyPlayerAccentGreen, fontWeight = FontWeight.Bold)
+                        }
+                        Slider(
+                            value = myplayerState.blurStrengthPx,
+                            onValueChange = {
+                                myplayerState.blurStrengthPx = it
+                                myplayerState.saveAppearanceToPrefs()
+                            },
+                            valueRange = 0f..50f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = MyPlayerAccentGreen,
+                                activeTrackColor = MyPlayerAccentGreen
+                            )
+                        )
+                    }
+                    MyPlayerSwitchRow(
+                        title = "Animation",
+                        subtitle = "Smooth UI transitions, lyric spring scaling & screen motion",
+                        checked = myplayerState.smoothAnimations,
+                        onCheckedChange = {
+                            myplayerState.smoothAnimations = it
+                            myplayerState.saveAppearanceToPrefs()
+                        }
+                    )
+                }
+            }
+        }
+
+        item { Spacer(Modifier.height(90.dp)) }
+    }
+}
 
 // 11. REAL-TIME MYPLAYER AUDIO FX DSP ENGINE & FULL PIXEL-ACCURATE AUDIO FX SCREEN
 
@@ -21358,62 +21137,7 @@ fun MyPlayerAudioFxScreen(
 
 
 
-        // ── CARD 0A: 10-BAND RAINBOW EQUALIZER & AUTOEQ (2500+ HEADPHONES) ──
-        item {
-            Surface(
-                shape = RoundedCornerShape(28.dp),
-                color = MyPlayerSurface,
-                border = BorderStroke(1.dp, if (myplayerState.eqEnabled) MyPlayerAccentGreen.copy(alpha = 0.65f) else MyPlayerCardBorder),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onOpenEqualizer() }
-            ) {
-                Row(
-                    modifier = Modifier.padding(18.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(46.dp)
-                                .clip(CircleShape)
-                                .background(MyPlayerAccentGreen.copy(alpha = 0.18f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Default.GraphicEq, contentDescription = null, tint = MyPlayerAccentGreen)
-                        }
-                        Column {
-                            Text(
-                                text = "10-Band Rainbow Equalizer & AutoEQ",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = MyPlayerTextPrimary
-                            )
-                            Text(
-                                text = if (myplayerState.eqEnabled) "ON • ${myplayerState.selectedAutoEqModel ?: myplayerState.eqPreset.label} • Tap to tune bands"
-                                else "OFF • 20 Presets + 2,500+ AutoEQ Headphone Profiles",
-                                fontSize = 12.sp,
-                                color = if (myplayerState.eqEnabled) MyPlayerAccentGreen else MyPlayerTextSecondary
-                            )
-                        }
-                    }
-                    Switch(
-                        checked = myplayerState.eqEnabled,
-                        onCheckedChange = {
-                            myplayerState.eqEnabled = it
-                            MyPlayerAudioFxDspBridge.setEq(it, myplayerState.eqBands, myplayerState.preampDb)
-                        }
-                    )
-                }
-            }
-        }
-
-        // ── CARD 0B: APPLE MUSIC STYLE EQUAL-POWER CROSSFADE ────────────────
+        // ── CARD 0: APPLE MUSIC STYLE EQUAL-POWER CROSSFADE ────────────────
         item {
             Surface(
                 shape = RoundedCornerShape(28.dp),
@@ -21445,17 +21169,24 @@ fun MyPlayerAudioFxScreen(
                                 onValueChange = {
                                     myplayerState.crossfadeLengthSec = it
                                     MyPlayerAudioFxDspBridge.syncFromUiState(myplayerState)
+                                    myplayerState.saveAudioLabToPrefs()
                                 }
                             )
                         }
                     }
+                    Spacer(Modifier.height(10.dp))
+                    MyPlayerSwitchRow(
+                        title = "Smooth Pause & Resume Fade",
+                        subtitle = "Gently ramp volume when pausing or resuming playback",
+                        checked = myplayerState.enablePauseFade,
+                        onCheckedChange = {
+                            myplayerState.enablePauseFade = it
+                            MyPlayerAudioFxDspBridge.syncFromUiState(myplayerState)
+                            myplayerState.saveAudioLabToPrefs()
+                        }
+                    )
                 }
             }
-        }
-
-        // ── CARD 0C: PHONE-MIC ACTIVE NOISE CANCELLATION (ANC) ──────────────
-        item {
-            MyPlayerAncSettingsCard()
         }
 
         // ── CARD 1: REVERB (Exact match to screenshot) ───────────────────────

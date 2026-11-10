@@ -44,6 +44,8 @@ compose.desktop {
             )
             packageName = "MyPlayer"
             packageVersion = "6.2.0"
+            vendor = "MyPlayer"
+            description = "MyPlayer Desktop Audiophile Music Player"
             appResourcesRootDir.set(project.layout.projectDirectory.dir("package-resources"))
             modules(
                 "java.base",
@@ -77,14 +79,25 @@ tasks.withType<org.jetbrains.compose.desktop.application.tasks.AbstractJPackageT
     iconFile.set(project.file("icons/MyPlayer.ico"))
     if (name.contains("package", ignoreCase = true) && (name.contains("Exe") || name.contains("Msi"))) {
         freeArgs.add("--win-shortcut-prompt")
+        // Explicitly pass --resource-dir so jpackage uses package-resources/windows/main.wxs & overrides.wxi
+        val winResDir = project.file("package-resources/windows")
+        if (winResDir.exists()) {
+            freeArgs.addAll("--resource-dir", winResDir.absolutePath)
+        }
     }
 }
 
 tasks.matching { it.name.contains("package", ignoreCase = true) && (it.name.contains("Exe") || it.name.contains("Msi")) }.configureEach {
     doFirst {
+        val winResDir = file("package-resources/windows")
+        winResDir.mkdirs()
+        val ico = file("icons/MyPlayer.ico")
+        if (ico.exists()) {
+            ico.copyTo(File(winResDir, "MyPlayer.ico"), overwrite = true)
+        }
         val resDir = project.layout.buildDirectory.dir("compose/tmp/resources").get().asFile
         resDir.mkdirs()
-        file("package-resources/windows").listFiles()?.forEach { f ->
+        winResDir.listFiles()?.forEach { f ->
             f.copyTo(File(resDir, f.name), overwrite = true)
         }
     }

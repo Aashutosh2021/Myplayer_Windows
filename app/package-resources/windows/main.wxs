@@ -14,8 +14,13 @@
 
   <?include $(var.JpConfigDir)/overrides.wxi ?>
 
+  <!--
+    Id="*" generates a fresh ProductCode GUID on every build.
+    Combined with IncludeMaximum="yes" on UpgradeVersion, this allows same-version
+    reinstalls and upgrades without MSI Error 1638.
+  -->
   <Product
-    Id="$(var.JpProductCode)"
+    Id="*"
     Name="$(var.JpAppName)"
     Language="$(var.JpProductLanguage)"
     Version="$(var.JpAppVersion)"
@@ -27,31 +32,51 @@
       Manufacturer="$(var.JpAppVendor)"
       InstallerVersion="$(var.JpInstallerVersion)"
       Compressed="$(var.JpCompressedMsi)"
-      InstallScope="$(var.JpInstallScope)" Platform="x64"
+      InstallScope="$(var.JpInstallScope)"
+      InstallPrivileges="elevated"
+      Platform="x64"
     />
 
     <Media Id="1" Cabinet="Data.cab" EmbedCab="yes" />
 
+    <!-- Preserve upgrade detection properties across UAC elevation -->
+    <Property Id="JP_UPGRADABLE_FOUND" Secure="yes" />
+    <Property Id="JP_DOWNGRADABLE_FOUND" Secure="yes" />
+    <Property Id="REINSTALLMODE" Value="amus" />
+
     <Upgrade Id="$(var.JpProductUpgradeCode)">
-      <!-- Automatically detect, update, and remove any existing installation (both upgrades and same-version reinstalls) -->
+      <!-- Matches any version <= current version and uninstalls it cleanly -->
       <UpgradeVersion
         OnlyDetect="no"
         Property="JP_UPGRADABLE_FOUND"
+        Minimum="0.0.0.0"
+        IncludeMinimum="yes"
         Maximum="$(var.JpAppVersion)"
-        MigrateFeatures="yes"
-        IncludeMaximum="yes" />
-      <!-- Automatically detect, update, and remove any newer installation (clean reinstall/downgrade) -->
+        IncludeMaximum="yes"
+        MigrateFeatures="yes" />
+      <!-- Matches any newer version for downgrade handling -->
       <UpgradeVersion
         OnlyDetect="no"
         Property="JP_DOWNGRADABLE_FOUND"
         Minimum="$(var.JpAppVersion)"
-        MigrateFeatures="yes"
-        IncludeMinimum="no" />
+        IncludeMinimum="no"
+        MigrateFeatures="yes" />
     </Upgrade>
 
     <Binary Id="JpCaDll" SourceFile="wixhelper.dll"/>
-
     <CustomAction Id="JpFindRelatedProducts" BinaryKey="JpCaDll" DllEntry="FindRelatedProductsEx" />
+
+    <!--
+      Closes any running MyPlayer.exe instance so locked files never block installation or upgrade.
+      Scheduled After="CostFinalize" in InstallExecuteSequence so TARGETDIR is fully initialized,
+      preventing MSI Error 2732.
+    -->
+    <CustomAction
+      Id="JpCloseRunningApp"
+      Directory="TARGETDIR"
+      ExeCommand="cmd.exe /c &quot;taskkill /F /IM MyPlayer.exe /T &gt;nul 2&gt;&amp;1 &amp; exit /b 0&quot;"
+      Execute="immediate"
+      Return="ignore" />
 
     <!-- Standard required root -->
     <Directory Id="TARGETDIR" Name="SourceDir"/>
@@ -80,11 +105,15 @@
     <?endif?>
 
     <?ifdef JpIcon ?>
-    <Property Id="ARPPRODUCTICON" Value="JpARPPRODUCTICON"/>
-    <Icon Id="JpARPPRODUCTICON" SourceFile="$(var.JpIcon)"/>
+      <Property Id="ARPPRODUCTICON" Value="JpARPPRODUCTICON"/>
+      <Icon Id="JpARPPRODUCTICON" SourceFile="$(var.JpIcon)"/>
     <?endif?>
 
     <UIRef Id="JpUI"/>
+
+    <InstallUISequence>
+      <Custom Action="JpFindRelatedProducts" After="FindRelatedProducts"/>
+    </InstallUISequence>
 
     <InstallExecuteSequence>
       <Custom Action="JpSetARPINSTALLLOCATION" After="CostFinalize">Not Installed</Custom>
@@ -101,14 +130,11 @@
         <Custom Action="JpSetARPURLUPDATEINFO" After="CostFinalize">Not Installed</Custom>
       <?endif?>
 
-      <RemoveExistingProducts Before="CostInitialize"/>
-      <Custom Action="JpFindRelatedProducts" After="FindRelatedProducts"/>
-    </InstallExecuteSequence>
+      <Custom Action="JpCloseRunningApp" After="CostFinalize">NOT Installed</Custom>
 
-    <InstallUISequence>
       <Custom Action="JpFindRelatedProducts" After="FindRelatedProducts"/>
-    </InstallUISequence>
+      <RemoveExistingProducts After="InstallInitialize"/>
+    </InstallExecuteSequence>
 
   </Product>
 </Wix>
-

@@ -57,7 +57,7 @@ object MyPlayerAudioFxDspBridge {
     @Volatile var exponentialVolumeEnabled: Boolean = false
 
     // ---- 4. Apple-Style Crossfade & Pause Fade ----
-    @Volatile var crossfadeEnabled: Boolean = false
+    @Volatile var crossfadeEnabled: Boolean = true
     @Volatile var crossfadeSeconds: Float = 5.0f
     @Volatile var keepGaplessAlbums: Boolean = true
     @Volatile var pauseFadeEnabled: Boolean = true
@@ -76,6 +76,10 @@ object MyPlayerAudioFxDspBridge {
         }
 
     var onUpdateCrossfadeConfig: ((enabled: Boolean, seconds: Int) -> Unit)? = null
+        set(value) {
+            field = value
+            value?.invoke(crossfadeEnabled, crossfadeSeconds.toInt().coerceIn(1, 12))
+        }
 
     private var audioFx: AudioFxService? = null
     private var masterDsp: MasterAudioDspProcessor? = null
@@ -103,7 +107,6 @@ object MyPlayerAudioFxDspBridge {
         pushEqToMasterDsp()
     }
 
-    
     val isAnyCrossfadeActive: Boolean
         get() = crossfadeEnabled
 

@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import uk.co.caprica.vlcj.factory.MediaPlayerFactory
 import uk.co.caprica.vlcj.factory.discovery.NativeDiscovery
@@ -25,7 +26,9 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.ln
+import kotlin.math.roundToInt
 import kotlin.math.sin
+import kotlin.math.tanh
 
 object DesktopAudioBackend {
     private var mediaPlayer: MediaPlayer? = null
@@ -39,8 +42,21 @@ object DesktopAudioBackend {
     private const val BLOCK_ALIGN = CALLBACK_CHANNELS * BYTES_PER_SAMPLE
     private var soundLine: SourceDataLine? = null
     private var currentRate: Float = 1f
+
+    // Separate user volume slider (0..1) from crossfade/pause-fade envelope (0..1)
     @Volatile private var userTargetVolume: Float = 1f
+    @Volatile private var crossfadeEnvelope: Float = 1f
+    @Volatile var isCrossfading: Boolean = false
+        private set
+
     private var pauseFadeJob: Job? = null
+
+    // Secondary Deck for True Apple-Style Overlapping Crossfade
+    private var outgoingMediaPlayer: MediaPlayer? = null
+    private var outgoingSoundLine: SourceDataLine? = null
+    @Volatile private var outgoingEnvelope: Float = 0f
+    private var outgoingFadeJob: Job? = null
+    private var manualCrossfadeRampInJob: Job? = null
 
     private val backendScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -62,10 +78,6 @@ object DesktopAudioBackend {
     private var simulatedPauseTime: Long = 0L
     private var isSimulatedPlaying: Boolean = false
 
-    /**
-     * Searches all standard Windows VLC installation paths (64-bit, 32-bit, LocalAppData, env vars)
-     * so libVLC is discovered reliably on any Windows PC.
-     */
     fun discoverWindowsVlcPath(): File? {
         val candidates = buildList {
             System.getenv("VLC_PLUGIN_PATH")?.let { add(File(it).parentFile ?: File(it)) }
@@ -95,55 +107,295 @@ object DesktopAudioBackend {
                 "--audio-resampler=soxr"
             )
             mediaPlayerFactory = factory
-            val player = factory.mediaPlayers().newMediaPlayer()
-            player.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
-                override fun finished(mediaPlayer: MediaPlayer?) {
-                    isPaused = false
-                    backendScope.launch {
-                        onCompletionCallback?.invoke()
-                    }
-                }
-
-                override fun playing(mediaPlayer: MediaPlayer?) {
-                    isPaused = false
-                    backendScope.launch {
-                        onPlayingChangedCallback?.invoke(true)
-                    }
-                }
-
-                override fun paused(mediaPlayer: MediaPlayer?) {
-                    isPaused = true
-                    backendScope.launch {
-                        onPlayingChangedCallback?.invoke(false)
-                    }
-                }
-
-                override fun stopped(mediaPlayer: MediaPlayer?) {
-                    isPaused = false
-                    backendScope.launch {
-                        onPlayingChangedCallback?.invoke(false)
-                    }
-                }
-
-                override fun error(mediaPlayer: MediaPlayer?) {
-                    isPaused = false
-                    backendScope.launch {
-                        onPlayingChangedCallback?.invoke(false)
-                    }
-                }
-            })
-            mediaPlayer = player
+            DesktopMyPlayerDspPipeline.install()
+            val primaryDeck = createDeckPlayer(factory)
+            mediaPlayer = primaryDeck.first
+            soundLine = primaryDeck.second
             isVlcAvailable = true
-            println("[DesktopAudioBackend] VLC Media Engine initialized successfully.")
-            try {
-                enableCallbackAudio()
-            } catch (t: Throwable) {
-                println("[DesktopAudioBackend] DSP callback output unavailable: ${t.message}. VLC native output stays active.")
-            }
+            println("[DesktopAudioBackend] VLC Media Engine initialized successfully (Dual-Deck Crossfade ready).")
         } catch (t: Throwable) {
             println("[DesktopAudioBackend] VLC native engine not available: ${t.message}. Using fallback playback.")
             isVlcAvailable = false
         }
+    }
+
+    private fun createDeckPlayer(factory: MediaPlayerFactory): Pair<MediaPlayer, SourceDataLine?> {
+        val player = factory.mediaPlayers().newMediaPlayer()
+        player.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
+            override fun finished(mp: MediaPlayer?) {
+                if (mp !== mediaPlayer) return
+                isPaused = false
+                backendScope.launch {
+                    onCompletionCallback?.invoke()
+                }
+            }
+
+            override fun playing(mp: MediaPlayer?) {
+                if (mp !== mediaPlayer) return
+                isPaused = false
+                backendScope.launch {
+                    onPlayingChangedCallback?.invoke(true)
+                }
+            }
+
+            override fun paused(mp: MediaPlayer?) {
+                if (mp !== mediaPlayer) return
+                isPaused = true
+                backendScope.launch {
+                    onPlayingChangedCallback?.invoke(false)
+                }
+            }
+
+            override fun stopped(mp: MediaPlayer?) {
+                if (mp !== mediaPlayer) return
+                isPaused = false
+                backendScope.launch {
+                    onPlayingChangedCallback?.invoke(false)
+                }
+            }
+
+            override fun error(mp: MediaPlayer?) {
+                if (mp !== mediaPlayer) return
+                isPaused = false
+                backendScope.launch {
+                    onPlayingChangedCallback?.invoke(false)
+                }
+            }
+        })
+
+        var deckLine: SourceDataLine? = null
+        try {
+            val lineFormat = javax.sound.sampled.AudioFormat(
+                CALLBACK_RATE.toFloat(), 16, CALLBACK_CHANNELS, true, false
+            )
+            val line = AudioSystem.getSourceDataLine(lineFormat)
+            val bufferBytes = (((CALLBACK_RATE * BLOCK_ALIGN * 150) / 1000) / BLOCK_ALIGN) * BLOCK_ALIGN
+            line.open(lineFormat, bufferBytes)
+            line.start()
+            deckLine = line
+
+            // Per-deck high-pass state for outgoing crossfade mud-guard
+            var outHpfInL = 0.0
+            var outHpfOutL = 0.0
+            var outHpfInR = 0.0
+            var outHpfOutR = 0.0
+
+            val adapter = object : DefaultAudioCallbackAdapter(BLOCK_ALIGN) {
+                override fun onPlay(
+                    mp: MediaPlayer?,
+                    samples: ByteArray,
+                    sampleCount: Int,
+                    pts: Long
+                ) {
+                    try {
+                        val rawBytes = if (sampleCount > 0) {
+                            minOf(samples.size, sampleCount * BLOCK_ALIGN)
+                        } else {
+                            samples.size
+                        }
+                        val alignedByteCount = (rawBytes / BLOCK_ALIGN) * BLOCK_ALIGN
+                        if (alignedByteCount <= 0) return
+
+                        val activeLine = deckLine ?: return
+                        if (!activeLine.isRunning) activeLine.start()
+
+                        if (mp === mediaPlayer) {
+                            val frame = DesktopMyPlayerDspPipeline.process(samples, alignedByteCount)
+                            val writeLen = (frame.size / BLOCK_ALIGN) * BLOCK_ALIGN
+                            if (writeLen > 0) {
+                                activeLine.write(frame, 0, writeLen)
+                            }
+                        } else if (mp === outgoingMediaPlayer) {
+                            // Outgoing crossfade deck: apply equal-power cosine envelope + 110Hz sub-bass mud-guard
+                            val gain = (userTargetVolume * outgoingEnvelope).coerceIn(0f, 1f).toDouble()
+                            if (gain <= 0.001) return
+                            val frame = samples.copyOfRange(0, alignedByteCount)
+                            val rc = 1.0 / (2.0 * PI * 110.0)
+                            val dt = 1.0 / CALLBACK_RATE.toDouble()
+                            val alpha = rc / (rc + dt)
+                            val cut = 0.55
+                            var i = 0
+                            while (i <= frame.size - 4) {
+                                val sL = ((frame[i].toInt() and 0xFF) or (frame[i + 1].toInt() shl 8)).toShort().toInt()
+                                val sR = ((frame[i + 2].toInt() and 0xFF) or (frame[i + 3].toInt() shl 8)).toShort().toInt()
+                                var inL = sL / 32768.0
+                                var inR = sR / 32768.0
+                                val hpfL = alpha * (outHpfOutL + inL - outHpfInL)
+                                val hpfR = alpha * (outHpfOutR + inR - outHpfInR)
+                                outHpfInL = inL; outHpfOutL = hpfL
+                                outHpfInR = inR; outHpfOutR = hpfR
+                                inL = inL * (1.0 - cut) + hpfL * cut
+                                inR = inR * (1.0 - cut) + hpfR * cut
+                                val outL = (tanh(inL * gain) * 32767.0).roundToInt().coerceIn(-32768, 32767)
+                                val outR = (tanh(inR * gain) * 32767.0).roundToInt().coerceIn(-32768, 32767)
+                                frame[i] = (outL and 0xFF).toByte()
+                                frame[i + 1] = (outL shr 8).toByte()
+                                frame[i + 2] = (outR and 0xFF).toByte()
+                                frame[i + 3] = (outR shr 8).toByte()
+                                i += 4
+                            }
+                            activeLine.write(frame, 0, frame.size)
+                        }
+                    } catch (t: Throwable) {
+                        println("[DesktopAudioBackend] DSP play failed: ${t.message}")
+                    }
+                }
+
+                override fun pause(mp: MediaPlayer?, pts: Long) {
+                    try { deckLine?.stop() } catch (_: Throwable) {}
+                }
+
+                override fun resume(mp: MediaPlayer?, pts: Long) {
+                    try { deckLine?.start() } catch (_: Throwable) {}
+                }
+
+                override fun flush(mp: MediaPlayer?, pts: Long) {
+                    try { deckLine?.flush() } catch (_: Throwable) {}
+                }
+
+                override fun drain(mp: MediaPlayer?) {
+                    try { deckLine?.drain() } catch (_: Throwable) {}
+                }
+
+                override fun setVolume(volume: Float, mute: Boolean) {
+                    if (mute) {
+                        DesktopMyPlayerDspPipeline.setPlayerVolume(0f)
+                    } else {
+                        applyEffectiveVolume()
+                    }
+                }
+            }
+            player.audio().callback("S16N", CALLBACK_RATE, CALLBACK_CHANNELS, adapter)
+            DesktopMyPlayerDspPipeline.beginStream(CALLBACK_RATE, CALLBACK_CHANNELS)
+            DesktopMyPlayerDspPipeline.markCallbackMode()
+        } catch (t: Throwable) {
+            println("[DesktopAudioBackend] Callback audio fallback on deck: ${t.message}")
+        }
+        return player to deckLine
+    }
+
+    /**
+     * Hands off the currently playing VLC deck to [outgoingMediaPlayer] so the outgoing track
+     * continues playing its tail and fading out smoothly with an Apple Music equal-power cosine curve
+     * while the new track loads and fades in on the new primary [mediaPlayer].
+     */
+    @Synchronized
+    fun beginCrossfadeHandoff(fadeDurationMs: Long = (MyPlayerAudioFxDspBridge.crossfadeSeconds * 1000f).toLong()): Boolean {
+        val factory = mediaPlayerFactory ?: return false
+        val currentMp = mediaPlayer ?: return false
+        if (!isVlcAvailable || !isPlaying()) return false
+        if (outgoingMediaPlayer != null && isCrossfading) return true
+
+        stopOutgoingDeckImmediate()
+
+        return try {
+            val currentLine = soundLine
+            outgoingMediaPlayer = currentMp
+            outgoingSoundLine = currentLine
+            outgoingEnvelope = crossfadeEnvelope.coerceIn(0.15f, 1.0f)
+
+            val newDeck = createDeckPlayer(factory)
+            mediaPlayer = newDeck.first
+            soundLine = newDeck.second
+            lastDspSignature = null
+
+            isCrossfading = true
+            crossfadeEnvelope = 0.04f
+            applyEffectiveVolume()
+
+            val totalFadeMs = fadeDurationMs.coerceIn(1000L, 12_000L)
+            val startEnv = outgoingEnvelope
+            outgoingFadeJob = backendScope.launch {
+                val steps = 36
+                val stepDelay = (totalFadeMs / steps).coerceAtLeast(30L)
+                for (step in 1..steps) {
+                    if (!isActive) break
+                    val progress = step.toFloat() / steps.toFloat()
+                    outgoingEnvelope = (startEnv * cos(progress * (PI / 2.0)).toFloat()).coerceIn(0f, 1f)
+                    if (!DesktopMyPlayerDspPipeline.isCallbackMode) {
+                        try {
+                            val vlcVol = (userTargetVolume * outgoingEnvelope * 100f).roundToInt().coerceIn(0, 100)
+                            outgoingMediaPlayer?.audio()?.setVolume(vlcVol)
+                        } catch (_: Throwable) {}
+                    }
+                    delay(stepDelay)
+                }
+                outgoingEnvelope = 0f
+                stopOutgoingDeckImmediate()
+            }
+            true
+        } catch (t: Throwable) {
+            println("[DesktopAudioBackend] Crossfade handoff fallback: ${t.message}")
+            false
+        }
+    }
+
+    private fun stopOutgoingDeckImmediate() {
+        outgoingFadeJob?.cancel()
+        outgoingFadeJob = null
+        val oldMp = outgoingMediaPlayer
+        val oldLine = outgoingSoundLine
+        outgoingMediaPlayer = null
+        outgoingSoundLine = null
+        outgoingEnvelope = 0f
+        if (oldMp != null || oldLine != null) {
+            backendScope.launch(Dispatchers.IO) {
+                try { oldMp?.controls()?.stop() } catch (_: Throwable) {}
+                try { oldMp?.release() } catch (_: Throwable) {}
+                try { oldLine?.stop(); oldLine?.close() } catch (_: Throwable) {}
+            }
+        }
+    }
+
+    /**
+     * Called by Session.kt during track switches (`seekToNext`, `setMediaItem`, `setMediaItems`).
+     * When Crossfade is enabled and a track is playing, hands off the outgoing track to the
+     * secondary deck instead of abruptly cutting audio!
+     */
+    fun prepareForTrackSwitch() {
+        if (MyPlayerAudioFxDspBridge.isAnyCrossfadeActive && isPlaying()) {
+            val fadeMs = (MyPlayerAudioFxDspBridge.crossfadeSeconds.coerceIn(1f, 12f) * 1000f).toLong()
+            val handedOff = beginCrossfadeHandoff(fadeMs)
+            if (handedOff) {
+                // Start a smooth sine ramp-in as soon as the new track starts playing
+                manualCrossfadeRampInJob?.cancel()
+                manualCrossfadeRampInJob = backendScope.launch {
+                    var waited = 0L
+                    while (isActive && !isPlaying() && waited < 3500L) {
+                        delay(50L)
+                        waited += 50L
+                    }
+                    val steps = 28
+                    val stepDelay = (fadeMs / steps).coerceIn(35L, 180L)
+                    for (step in 1..steps) {
+                        if (!isActive || !isCrossfading) break
+                        val p = step.toFloat() / steps.toFloat()
+                        crossfadeEnvelope = sin(p * (PI / 2.0)).toFloat().coerceIn(0.04f, 1.0f)
+                        DesktopMyPlayerDspPipeline.crossfadeBassCutFactor = (sin(p * PI).toFloat() * 0.65f).coerceIn(0f, 0.75f)
+                        applyEffectiveVolume()
+                        delay(stepDelay)
+                    }
+                    DesktopMyPlayerDspPipeline.crossfadeBassCutFactor = 0f
+                    crossfadeEnvelope = 1.0f
+                    isCrossfading = false
+                    applyEffectiveVolume()
+                }
+                return
+            }
+        }
+        stopActiveDeckOnly()
+    }
+
+    private fun stopActiveDeckOnly() {
+        pauseFadeJob?.cancel()
+        isPaused = false
+        currentPath = null
+        if (isVlcAvailable && mediaPlayer != null) {
+            try {
+                mediaPlayer?.controls()?.stop()
+            } catch (_: Exception) {}
+        }
+        isSimulatedPlaying = false
     }
 
     fun resolveLocalFile(pathOrUri: String?): File? {
@@ -195,7 +447,10 @@ object DesktopAudioBackend {
 
     fun play(pathOrUri: String, startPositionMs: Long = 0L) {
         pauseFadeJob?.cancel()
-        applyImmediateVolume(userTargetVolume)
+        if (!isCrossfading) {
+            crossfadeEnvelope = 1.0f
+        }
+        applyEffectiveVolume()
 
         val localFile = resolveLocalFile(pathOrUri)
         val cleanPath = if (localFile != null) {
@@ -235,91 +490,23 @@ object DesktopAudioBackend {
         onPlayingChangedCallback?.invoke(true)
     }
 
-    private fun enableCallbackAudio() {
-        val player = requireNotNull(mediaPlayer)
-        DesktopMyPlayerDspPipeline.install()
-        val lineFormat = javax.sound.sampled.AudioFormat(
-            CALLBACK_RATE.toFloat(), 16, CALLBACK_CHANNELS, true, false
-        )
-        val line = AudioSystem.getSourceDataLine(lineFormat)
-        val bufferBytes = (((CALLBACK_RATE * BLOCK_ALIGN * 150) / 1000) / BLOCK_ALIGN) * BLOCK_ALIGN
-        line.open(lineFormat, bufferBytes)
-        line.start()
-        soundLine = line
-        val adapter = object : DefaultAudioCallbackAdapter(BLOCK_ALIGN) {
-            override fun onPlay(
-                mediaPlayer: MediaPlayer?,
-                samples: ByteArray,
-                sampleCount: Int,
-                pts: Long
-            ) {
-                try {
-                    val rawBytes = if (sampleCount > 0) {
-                        minOf(samples.size, sampleCount * BLOCK_ALIGN)
-                    } else {
-                        samples.size
-                    }
-                    val alignedByteCount = (rawBytes / BLOCK_ALIGN) * BLOCK_ALIGN
-                    if (alignedByteCount <= 0) return
-
-                    val frame = DesktopMyPlayerDspPipeline.process(samples, alignedByteCount)
-                    val writeLen = (frame.size / BLOCK_ALIGN) * BLOCK_ALIGN
-                    if (writeLen > 0) {
-                        val activeLine = soundLine
-                        if (activeLine != null) {
-                            if (!activeLine.isRunning) activeLine.start()
-                            activeLine.write(frame, 0, writeLen)
-                        }
-                    }
-                } catch (t: Throwable) {
-                    println("[DesktopAudioBackend] DSP play failed: ${t.message}")
-                }
-            }
-
-            override fun pause(mediaPlayer: MediaPlayer?, pts: Long) {
-                try { soundLine?.stop() } catch (_: Throwable) {}
-            }
-
-            override fun resume(mediaPlayer: MediaPlayer?, pts: Long) {
-                try { soundLine?.start() } catch (_: Throwable) {}
-            }
-
-            override fun flush(mediaPlayer: MediaPlayer?, pts: Long) {
-                try { soundLine?.flush() } catch (_: Throwable) {}
-            }
-
-            override fun drain(mediaPlayer: MediaPlayer?) {
-                try { soundLine?.drain() } catch (_: Throwable) {}
-            }
-
-            override fun setVolume(volume: Float, mute: Boolean) {
-                if (mute) {
-                    DesktopMyPlayerDspPipeline.setPlayerVolume(0f)
-                } else if (volume in 0f..1.5f) {
-                    DesktopMyPlayerDspPipeline.setPlayerVolume(volume.coerceIn(0f, 1f))
-                }
-            }
-        }
-        player.audio().callback("S16N", CALLBACK_RATE, CALLBACK_CHANNELS, adapter)
-        DesktopMyPlayerDspPipeline.beginStream(CALLBACK_RATE, CALLBACK_CHANNELS)
-        DesktopMyPlayerDspPipeline.markCallbackMode()
-        println("[DesktopAudioBackend] DSP callback chain live (S16N ${CALLBACK_RATE}Hz x${CALLBACK_CHANNELS}, buffer=${bufferBytes}B).")
-    }
-
     fun pause() {
         isPaused = true
         pauseFadeJob?.cancel()
+        manualCrossfadeRampInJob?.cancel()
+        isCrossfading = false
+        DesktopMyPlayerDspPipeline.crossfadeBassCutFactor = 0f
+        stopOutgoingDeckImmediate()
         if (isVlcAvailable && mediaPlayer != null) {
             if (MyPlayerAudioFxDspBridge.pauseFadeEnabled) {
                 val fadeMs = (MyPlayerAudioFxDspBridge.pauseFadeDurationSec * 180f).toLong().coerceIn(80L, 450L)
-                val startVol = userTargetVolume.coerceIn(0.05f, 1f)
                 pauseFadeJob = backendScope.launch {
                     val steps = 8
                     val stepDelay = (fadeMs / steps).coerceAtLeast(10L)
                     for (s in 1..steps) {
                         val p = s.toFloat() / steps.toFloat()
-                        val env = cos(p * (PI / 2.0)).toFloat()
-                        applyImmediateVolume(startVol * env)
+                        crossfadeEnvelope = cos(p * (PI / 2.0)).toFloat().coerceIn(0f, 1f)
+                        applyEffectiveVolume()
                         delay(stepDelay)
                     }
                     try {
@@ -327,7 +514,8 @@ object DesktopAudioBackend {
                     } catch (_: Exception) {
                         try { mediaPlayer?.controls()?.pause() } catch (_: Exception) {}
                     }
-                    applyImmediateVolume(startVol)
+                    crossfadeEnvelope = 1f
+                    applyEffectiveVolume()
                 }
                 return
             }
@@ -350,9 +538,9 @@ object DesktopAudioBackend {
         pauseFadeJob?.cancel()
         if (isVlcAvailable && mediaPlayer != null) {
             try {
-                val targetVol = userTargetVolume.coerceIn(0.05f, 1f)
                 if (MyPlayerAudioFxDspBridge.pauseFadeEnabled) {
-                    applyImmediateVolume(0.05f)
+                    crossfadeEnvelope = 0.05f
+                    applyEffectiveVolume()
                 }
                 mediaPlayer?.controls()?.play()
                 if (MyPlayerAudioFxDspBridge.pauseFadeEnabled) {
@@ -362,11 +550,12 @@ object DesktopAudioBackend {
                         val stepDelay = (fadeMs / steps).coerceAtLeast(10L)
                         for (s in 1..steps) {
                             val p = s.toFloat() / steps.toFloat()
-                            val env = sin(p * (PI / 2.0)).toFloat()
-                            applyImmediateVolume(targetVol * env)
+                            crossfadeEnvelope = sin(p * (PI / 2.0)).toFloat().coerceIn(0.05f, 1f)
+                            applyEffectiveVolume()
                             delay(stepDelay)
                         }
-                        applyImmediateVolume(targetVol)
+                        crossfadeEnvelope = 1f
+                        applyEffectiveVolume()
                     }
                 }
                 return
@@ -384,6 +573,11 @@ object DesktopAudioBackend {
 
     fun stop() {
         pauseFadeJob?.cancel()
+        manualCrossfadeRampInJob?.cancel()
+        isCrossfading = false
+        crossfadeEnvelope = 1f
+        DesktopMyPlayerDspPipeline.crossfadeBassCutFactor = 0f
+        stopOutgoingDeckImmediate()
         isPaused = false
         currentPath = null
         if (isVlcAvailable && mediaPlayer != null) {
@@ -411,24 +605,32 @@ object DesktopAudioBackend {
         }
     }
 
-    private fun applyImmediateVolume(volume: Float) {
-        val clamped = volume.coerceIn(0f, 1f)
+    private fun applyEffectiveVolume() {
+        val effective = (userTargetVolume * crossfadeEnvelope).coerceIn(0f, 1f)
         if (DesktopMyPlayerDspPipeline.isCallbackMode) {
-            DesktopMyPlayerDspPipeline.setPlayerVolume(clamped)
+            DesktopMyPlayerDspPipeline.setPlayerVolume(effective)
             return
         }
         if (isVlcAvailable && mediaPlayer != null) {
             try {
-                val vlcVolume = (clamped * 100).toInt().coerceIn(0, 100)
+                val vlcVolume = (effective * 100).toInt().coerceIn(0, 100)
                 mediaPlayer?.audio()?.setVolume(vlcVolume)
             } catch (_: Exception) {}
         }
     }
 
+    /** Called by the user's volume slider in NowPlayingScreen / MainViewModel. */
     fun setVolume(volume: Float) {
-        val clamped = volume.coerceIn(0f, 1f)
-        userTargetVolume = clamped
-        applyImmediateVolume(clamped)
+        userTargetVolume = volume.coerceIn(0f, 1f)
+        applyEffectiveVolume()
+    }
+
+    /** Called by AudioFeatureManagers / MediaController for crossfade volume enveloping. */
+    fun setCrossfadeEnvelope(envelope: Float) {
+        val clamped = envelope.coerceIn(0f, 1f)
+        crossfadeEnvelope = clamped
+        isCrossfading = clamped < 0.99f
+        applyEffectiveVolume()
     }
 
     fun getPosition(): Long {
@@ -546,6 +748,8 @@ object DesktopAudioBackend {
     fun release() {
         try {
             pauseFadeJob?.cancel()
+            manualCrossfadeRampInJob?.cancel()
+            stopOutgoingDeckImmediate()
             val player = mediaPlayer
             val factory = mediaPlayerFactory
             val line = soundLine

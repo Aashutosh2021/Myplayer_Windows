@@ -59,7 +59,7 @@ class MediaController : Player {
     override var volume: Float = 1.0f
         set(value) {
             field = value
-            com.example.myplayer.playback.DesktopAudioBackend.setVolume(value)
+            com.example.myplayer.playback.DesktopAudioBackend.setCrossfadeEnvelope(value)
         }
 
     override var playbackParameters: PlaybackParameters = PlaybackParameters()
@@ -159,7 +159,7 @@ class MediaController : Player {
     override fun seekToNext() {
         if (hasNextMediaItem()) {
             currentIndex++
-            com.example.myplayer.playback.DesktopAudioBackend.stop()
+            com.example.myplayer.playback.DesktopAudioBackend.prepareForTrackSwitch()
             notifyMediaItemTransition(Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
             play()
         }
@@ -184,7 +184,7 @@ class MediaController : Player {
         queue.clear()
         queue.add(item)
         currentIndex = 0
-        com.example.myplayer.playback.DesktopAudioBackend.stop()
+        com.example.myplayer.playback.DesktopAudioBackend.prepareForTrackSwitch()
         notifyMediaItemTransition(Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED)
     }
 
@@ -202,7 +202,7 @@ class MediaController : Player {
         queue.clear()
         queue.addAll(items)
         currentIndex = 0
-        com.example.myplayer.playback.DesktopAudioBackend.stop()
+        com.example.myplayer.playback.DesktopAudioBackend.prepareForTrackSwitch()
         notifyMediaItemTransition(Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED)
     }
 
@@ -215,7 +215,7 @@ class MediaController : Player {
         queue.clear()
         queue.addAll(items)
         currentIndex = startIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0))
-        com.example.myplayer.playback.DesktopAudioBackend.stop()
+        com.example.myplayer.playback.DesktopAudioBackend.prepareForTrackSwitch()
         notifyMediaItemTransition(Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED)
         if (startPositionMs > 0L) seekTo(startPositionMs)
     }

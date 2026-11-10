@@ -136,7 +136,7 @@ fun AudioAndPlaybackScreen(
                     )
                 }
                 Text(
-                    "Audio & Playback",
+                    "Audio & Streaming Output",
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -152,6 +152,35 @@ fun AudioAndPlaybackScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             contentPadding = PaddingValues(bottom = 100.dp)
         ) {
+            item {
+                Text(
+                    "Equalizer & Audio Lab FX",
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp, start = 4.dp)
+                )
+            }
+
+            // 1. Equalizer (15-band hardware acoustic tuning)
+            item {
+                SettingsRowNav(
+                    icon = Icons.Default.Equalizer,
+                    title = "Equalizer",
+                    subtitle = "${if (state.eqEnabled) "On" else "Off"} • ${state.eqPreset.label} • 15-band hardware acoustic tuning",
+                    onClick = { currentSubScreen = SubScreen.EQUALIZER_15 }
+                )
+            }
+
+            // 2. Audio FX Lab (Apple Crossfade, Reverb, Spatial, Loudness, Speed/Pitch)
+            item {
+                SettingsRowNav(
+                    icon = Icons.Default.Tune,
+                    title = "Audio FX Lab",
+                    subtitle = "Apple Crossfade, Reverb, 3D Spatial, Loudness Boost, Speed & Pitch",
+                    onClick = { currentSubScreen = SubScreen.AUDIO_LAB }
+                )
+            }
+
             item {
                 Text(
                     "Audio & Streaming",
@@ -189,17 +218,6 @@ fun AudioAndPlaybackScreen(
                     subtitle = "Bypass DSP for bit-exact hardware output",
                     checked = state.bitPerfectMode,
                     onCheckedChange = { scope.launch { store.setBitPerfect(it) } }
-                )
-            }
-
-            // 4. Crossfade
-            item {
-                SettingsRowToggle(
-                    icon = Icons.Default.GraphicEq,
-                    title = "Crossfade",
-                    subtitle = "Blend the end of a track into the next",
-                    checked = state.crossfadeEnabled,
-                    onCheckedChange = { scope.launch { store.setCrossfade(it) } }
                 )
             }
 
@@ -282,67 +300,14 @@ fun AudioAndPlaybackScreen(
                 )
             }
 
-            // 11. Loudness Normalization Dialog Trigger
-            item {
-                SettingsRowNav(
-                    icon = Icons.AutoMirrored.Filled.VolumeDown,
-                    title = "Loudness Normalization",
-                    subtitle = "${state.loudnessMode.title} • ${state.loudnessMode.description}",
-                    onClick = { showLoudnessDialog = true }
-                )
-            }
-
-            // 12. 15-Band Equalizer Screen Trigger
-            item {
-                SettingsRowNav(
-                    icon = Icons.Default.Equalizer,
-                    title = "Equalizer",
-                    subtitle = "${if (state.eqEnabled) "On" else "Off"} • ${state.eqPreset.label} • 15-band",
-                    onClick = { currentSubScreen = SubScreen.EQUALIZER_15 }
-                )
-            }
-
-            // 12b. Audio Lab & Effects
-            item {
-                SettingsRowNav(
-                    icon = Icons.Default.Tune,
-                    title = "Audio Lab & Effects",
-                    subtitle = "Reverb, Spatial Audio, Loudness Boost, Speed & Pitch",
-                    onClick = { currentSubScreen = SubScreen.AUDIO_LAB }
-                )
-            }
-
             // 13. System Audio Effects
             item {
                 SettingsRowToggle(
                     icon = Icons.Default.SurroundSound,
                     title = "System Audio Effects",
-                    subtitle = "Let Dolby / system equalizer process audio",
+                    subtitle = "Let OS / external equalizer process hardware audio session",
                     checked = state.systemAudioEffects,
                     onCheckedChange = { scope.launch { store.setSystemAudioEffects(it) } }
-                )
-            }
-
-            // 13b. Dolby Atmos & 3D Surround
-            item {
-                SettingsRowToggle(
-                    icon = Icons.Default.SurroundSound,
-                    title = "Dolby Atmos & 3D Surround",
-                    subtitle = if (state.dolbySurroundAtmos) "Active • Multichannel 5.1/7.1 Atmos binaural virtualizer"
-                    else "Off • Standard stereo downmix",
-                    checked = state.dolbySurroundAtmos,
-                    onCheckedChange = { scope.launch { store.setDolbySurroundAtmos(it) } }
-                )
-            }
-
-            // 13c. Headphone Spatial Audio & Soundstage
-            item {
-                SettingsRowNav(
-                    icon = Icons.Default.Hearing,
-                    title = "Headphone Spatial Audio (3D Soundstage)",
-                    subtitle = if (state.spatialAudioEnabled) "Active • ${state.spatialMode.title} • ${(state.spatialAmount * 100).toInt()}%"
-                    else "Off • Natural headphone stereo",
-                    onClick = { showSpatialDialog = true }
                 )
             }
 

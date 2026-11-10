@@ -1,8 +1,14 @@
 package com.example.myplayer.ui.screens.nowplaying
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -26,8 +32,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -36,16 +44,15 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.myplayer.data.lyrics.LyricsScript
+import com.example.myplayer.ui.myplayer.MyPlayerAccentGreen
+import com.example.myplayer.ui.myplayer.MyPlayerAccentPurple
+import com.example.myplayer.ui.myplayer.rememberMyPlayerUiStateHolder
 import com.example.myplayer.ui.theme.*
-import kotlinx.coroutines.launch
 
 /**
  * Lyrics tab for NowPlayingScreen.
- * Displays synced lyrics with real-time line highlighting,
- * or falls back to plain text.
- *
- * [positionMs] is passed as State (not a raw Long) so only the composables
- * that actually read it recompose on each position tick.
+ * Displays synced lyrics with real-time line highlighting, Lyrics Shader gradient,
+ * and High Quality Bloom glow from Appearance settings.
  */
 @Composable
 fun LyricsTab(
@@ -124,7 +131,6 @@ fun LyricsTab(
                         color = textMuted
                     )
                     Spacer(Modifier.height(16.dp))
-                    // Retry + Add Custom Lyrics Buttons Row
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -218,14 +224,22 @@ private fun SyncedLyricsView(
 ) {
     val isDark = ThemeState.isDarkMode
     val baseColor = if (isDark) Color.White else CharcoalPrimary
+    val myplayerState = rememberMyPlayerUiStateHolder()
 
-    // Read positionMs.value INSIDE derivedStateOf so Compose tracks it as a
-    // dependency and re-derives on every tick — but only notifies readers when
-    // the active *line index* actually changes.
+    val infinite = rememberInfiniteTransition(label = "lyricsShaderAnim")
+    val shaderShift by infinite.animateFloat(
+        initialValue = 0f,
+        targetValue = 520f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 3200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "lyricShaderShift"
+    )
+
     val activeIndexState = remember(lines) {
         derivedStateOf {
             val pos = positionMs.value
-            // Binary search: last line with timestamp <= pos
             var lo = 0
             var hi = lines.size - 1
             var idx = -1
@@ -240,11 +254,15 @@ private fun SyncedLyricsView(
 
     val listState = rememberLazyListState()
 
-    // Auto-scroll only when the active line changes (snapshotFlow deduplicates).
     LaunchedEffect(lines) {
         snapshotFlow { activeIndexState.value }.collect { index ->
             if (index >= 0) {
-                listState.animateScrollToItem(index = (index - 2).coerceAtLeast(0))
+                val target = (index - 2).coerceAtLeast(0)
+                if (myplayerState.smoothAnimations) {
+                    listState.animateScrollToItem(index = target)
+                } else {
+                    listState.scrollToItem(index = target)
+                }
             }
         }
     }
@@ -261,7 +279,11 @@ private fun SyncedLyricsView(
 
             val scale by animateFloatAsState(
                 targetValue = if (isActive) 1.15f else 1f,
-                animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
+                animationSpec = if (myplayerState.smoothAnimations) {
+                    spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
+                } else {
+                    snap()
+                },
                 label = "lyricScale"
             )
             val color by animateColorAsState(
@@ -270,26 +292,70 @@ private fun SyncedLyricsView(
                     isPast -> baseColor.copy(alpha = 0.55f)
                     else -> baseColor.copy(alpha = 0.35f)
                 },
-                animationSpec = tween(300),
+                animationSpec = if (myplayerState.smoothAnimations) tween(300) else snap(),
                 label = "lyricColor"
             )
 
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(14.dp))
+                    .then(
+                        if (isActive && myplayerState.highQualityBloom) {
+                            Modifier.background(
+                                Brush.horizontalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        MyPlayerAccentGreen.copy(alpha = 0.18f),
+                                        MyPlayerAccentPurple.copy(alpha = 0.16f),
+                                        Color.Transparent
+                                    )
+                                )
+                            )
+                        } else Modifier
+                    )
                     .clickable { onSeek(timestampMs) }
-                    .padding(vertical = 4.dp, horizontal = 8.dp),
+                    .padding(vertical = 6.dp, horizontal = 10.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = lyricLine.ifBlank { "•" },
-                    style = MaterialTheme.typography.bodyLarge.copy(
+                val activeShadow = if (isActive && myplayerState.highQualityBloom) {
+                    Shadow(
+                        color = MyPlayerAccentGreen.copy(alpha = 0.72f),
+                        offset = Offset.Zero,
+                        blurRadius = 26f
+                    )
+                } else null
+
+                val textStyle = if (isActive && myplayerState.lyricsShader) {
+                    MaterialTheme.typography.bodyLarge.copy(
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                baseColor,
+                                MyPlayerAccentGreen,
+                                Color(0xFF38BDF8),
+                                baseColor
+                            ),
+                            start = Offset(shaderShift, 0f),
+                            end = Offset(shaderShift + 240f, 60f)
+                        ),
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 17.sp,
+                        lineHeight = 26.sp,
+                        shadow = activeShadow
+                    )
+                } else {
+                    MaterialTheme.typography.bodyLarge.copy(
+                        color = color,
                         fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.Normal,
                         fontSize = 16.sp,
-                        lineHeight = 26.sp
-                    ),
-                    color = color,
+                        lineHeight = 26.sp,
+                        shadow = activeShadow
+                    )
+                }
+
+                Text(
+                    text = lyricLine.ifBlank { "•" },
+                    style = textStyle,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.graphicsLayer {
                         scaleX = scale
@@ -323,8 +389,6 @@ private fun PlainLyricsView(text: String) {
         }
     }
 }
-
-
 
 /** Original / Hinglish / हिन्दी / اردو chips; hidden for English lyrics. */
 @Composable

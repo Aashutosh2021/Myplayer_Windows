@@ -2,11 +2,10 @@ package com.example.myplayer.playback
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
-import android.os.PowerManager
 import androidx.annotation.OptIn
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import com.example.myplayer.myplayerfx.DesktopMyPlayerDspPipeline
 import com.example.myplayer.ui.myplayer.MyPlayerAudioFxDspBridge
 import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
@@ -37,10 +36,11 @@ class AudioFeatureManagers @Inject constructor(
     }
 
     /**
-     * 2. APPLE MUSIC STYLE EQUAL-POWER S-CURVE CROSSFADE ENGINE
-     * Works seamlessly across BOTH local multi-item queues AND online 1-item queues!
-     * Uses equal-power cosine/sine loudness curves (cos(t * PI/2) fade-out, sin(t * PI/2) fade-in)
-     * so perceived loudness never dips in the middle of the transition.
+     * 2. APPLE MUSIC STYLE DUAL-DECK EQUAL-POWER S-CURVE CROSSFADE ENGINE (Windows)
+     * - Works seamlessly across BOTH local multi-item queues AND online 1-item queues!
+     * - Hands off the outgoing VLC deck at the start of the crossfade window so Track A
+     *   continues playing and fading out via cos(t * PI/2) while Track B starts immediately
+     *   and ramps in via sin(t * PI/2) with 110Hz sub-bass mud-guard active!
      */
     fun attachCrossfadeMonitor(
         scope: CoroutineScope,
@@ -59,10 +59,11 @@ class AudioFeatureManagers @Inject constructor(
             var isRampingInNewTrack = false
 
             while (isActive) {
-                delay(80L)
+                delay(75L)
                 val xfadeActive = isEnabled() || MyPlayerAudioFxDspBridge.crossfadeEnabled
                 if (!xfadeActive) {
                     if (player.volume < 1f) player.volume = 1f
+                    DesktopMyPlayerDspPipeline.crossfadeBassCutFactor = 0f
                     isRampingInNewTrack = false
                     continue
                 }
@@ -75,42 +76,62 @@ class AudioFeatureManagers @Inject constructor(
                 val position = player.currentPosition
                 val currentMediaId = player.currentMediaItem?.mediaId ?: ""
 
-                if (duration > 12_000L && position > 0L) {
+                if (duration > 10_000L && position > 1500L) {
                     val fadeSec = crossfadeSecondsProvider().coerceIn(1f, 12f)
                     val fadeWindowMs = (fadeSec * 1000f).toLong().coerceIn(1000L, (duration / 2).coerceAtLeast(1500L))
                     val remainingMs = duration - position
 
-                    if (remainingMs in 1..fadeWindowMs) {
-                        // Apple Music Equal-Power Cosine Fade-Out: progress goes 0.0 (start of fade) -> 1.0 (end of track)
-                        val progress = (1f - (remainingMs.toFloat() / fadeWindowMs.toFloat())).coerceIn(0f, 1f)
-                        val equalPowerOut = cos(progress * (PI / 2.0)).toFloat().coerceIn(0.04f, 1.0f)
-                        player.volume = equalPowerOut
+                    if (remainingMs in 350L..fadeWindowMs && lastTriggeredMediaId != currentMediaId) {
+                        lastTriggeredMediaId = currentMediaId
+                        isRampingInNewTrack = true
 
-                        // Trigger next track smoothly right before track end (works for BOTH local and online queues!)
-                        if (remainingMs <= 320L && lastTriggeredMediaId != currentMediaId) {
-                            lastTriggeredMediaId = currentMediaId
-                            isRampingInNewTrack = true
-
-                            if (player.mediaItemCount > 1 && player.hasNextMediaItem()) {
-                                player.seekToNextMediaItem()
-                            } else if (onTriggerNextTrack != null) {
-                                onTriggerNextTrack.invoke()
-                            }
-
-                            // Apple Music Equal-Power Sine Fade-In on the incoming track
-                            val rampInSteps = 18
-                            val stepDelayMs = (fadeWindowMs / (rampInSteps * 2)).coerceIn(45L, 140L)
-                            for (step in 1..rampInSteps) {
+                        val actualOverlapMs = remainingMs.coerceIn(1000L, fadeWindowMs)
+                        // Hand off outgoing track to secondary VLC deck so it keeps playing & fading out
+                        val handedOff = DesktopAudioBackend.beginCrossfadeHandoff(actualOverlapMs)
+                        if (!handedOff) {
+                            // Single-deck fallback S-curve fade-out
+                            val outSteps = 12
+                            val outDelay = (actualOverlapMs / (outSteps * 2)).coerceIn(35L, 120L)
+                            for (s in 1..outSteps) {
                                 if (!isActive) break
-                                val inProgress = step.toFloat() / rampInSteps.toFloat()
-                                val equalPowerIn = sin(inProgress * (PI / 2.0)).toFloat().coerceIn(0.06f, 1.0f)
-                                player.volume = equalPowerIn
-                                delay(stepDelayMs)
+                                val p = s.toFloat() / outSteps.toFloat()
+                                player.volume = cos(p * (PI / 2.0)).toFloat().coerceIn(0.05f, 1.0f)
+                                delay(outDelay)
                             }
-                            player.volume = 1.0f
-                            isRampingInNewTrack = false
                         }
-                    } else if (!isRampingInNewTrack && player.volume < 1f && position < duration - fadeWindowMs) {
+
+                        player.volume = 0.04f
+                        if (player.mediaItemCount > 1 && player.hasNextMediaItem()) {
+                            player.seekToNextMediaItem()
+                        } else if (onTriggerNextTrack != null) {
+                            onTriggerNextTrack.invoke()
+                        }
+
+                        // Wait for incoming track to start playing (handles online YouTube URL resolution)
+                        var waitedMs = 0L
+                        while (isActive && waitedMs < 3500L) {
+                            val newId = player.currentMediaItem?.mediaId ?: ""
+                            if (newId != currentMediaId && player.isPlaying) break
+                            delay(60L)
+                            waitedMs += 60L
+                        }
+
+                        // Apple Music Equal-Power Sine Fade-In + 110Hz Sub-Bass Mud-Guard
+                        val rampInSteps = 28
+                        val stepDelayMs = (actualOverlapMs / rampInSteps).coerceIn(35L, 180L)
+                        for (step in 1..rampInSteps) {
+                            if (!isActive) break
+                            val inProgress = step.toFloat() / rampInSteps.toFloat()
+                            val equalPowerIn = sin(inProgress * (PI / 2.0)).toFloat().coerceIn(0.04f, 1.0f)
+                            DesktopMyPlayerDspPipeline.crossfadeBassCutFactor =
+                                (sin(inProgress * PI).toFloat() * 0.65f).coerceIn(0f, 0.75f)
+                            player.volume = equalPowerIn
+                            delay(stepDelayMs)
+                        }
+                        DesktopMyPlayerDspPipeline.crossfadeBassCutFactor = 0f
+                        player.volume = 1.0f
+                        isRampingInNewTrack = false
+                    } else if (!isRampingInNewTrack && !DesktopAudioBackend.isCrossfading && player.volume < 1f && remainingMs > fadeWindowMs) {
                         player.volume = 1f
                     }
                 }

@@ -240,8 +240,16 @@ class MusicService : MediaSessionService() {
             audioFeatureManagers?.attachCrossfadeMonitor(
                 scope = serviceScope,
                 player = MediaController.getShared(),
-                isEnabled = { currentAudioPlaybackState.crossfadeEnabled },
-                crossfadeDurationSec = currentAudioPlaybackState.crossfadeSeconds
+                isEnabled = { currentAudioPlaybackState.crossfadeEnabled || com.example.myplayer.ui.myplayer.MyPlayerAudioFxDspBridge.isAnyCrossfadeActive },
+                crossfadeDurationSec = currentAudioPlaybackState.crossfadeSeconds,
+                crossfadeSecondsProvider = {
+                    if (com.example.myplayer.ui.myplayer.MyPlayerAudioFxDspBridge.isAnyCrossfadeActive) {
+                        com.example.myplayer.ui.myplayer.MyPlayerAudioFxDspBridge.crossfadeSeconds
+                    } else {
+                        currentAudioPlaybackState.crossfadeSeconds.toFloat()
+                    }
+                },
+                onTriggerNextTrack = { playbackEventBus.emit(PlaybackEvent.SkipToNextRequested) }
             )
         } catch (e: Exception) {
             println("[MusicService] Crossfade monitor unavailable: ${e.message}")

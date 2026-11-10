@@ -1306,93 +1306,43 @@ fun SettingsScreen(
 
 
         // Section: Appearance
-
         item { MyPlayerSectionHeader(title = "Appearance") }
-
         item {
-
             MyPlayerSettingsCard {
-
                 MyPlayerSettingsToggleRow(
-
                     icon = Icons.Filled.DarkMode,
-
                     title = "Dark Mode",
-
                     subtitle = if (ThemeState.isDarkMode) "Dark theme active" else "Light theme active",
-
                     checked = ThemeState.isDarkMode,
-
                     onCheckedChange = { enabled ->
-
                         ThemeState.setDark(enabled)
-
                     }
-
                 )
-
                 MyPlayerSettingsDivider()
-
                 MyPlayerSettingsNavigationRow(
                     icon = Icons.Filled.Palette,
-                    title = "Customize Player Styles",
-                    subtitle = "Active: ${myplayerState?.playerStyle?.title ?: "Radial (MyPlayer)"} • 6 unique styles",
-                    onClick = onNavigateToPlayerStyles
-                )
-                MyPlayerSettingsDivider()
-                MyPlayerSettingsNavigationRow(
-                    icon = Icons.Filled.BlurOn,
-                    title = "Player Appearance & Lyrics Shaders",
-                    subtitle = "Glass blur, progressive blur, bloom & animated canvas settings",
+                    title = "Appearance & Player Styles",
+                    subtitle = "Active: ${myplayerState?.playerStyle?.title ?: "Radial (MyPlayer)"} • Styles, Lyrics Shader, Bloom, Blur & Themes",
                     onClick = onNavigateToMyPlayerAppearance
                 )
-
             }
-
         }
 
-
-
-        // Section: Playback
-
+        // Section: Playback & Audio
         item { MyPlayerSectionHeader(title = "Playback & Audio") }
-
         item {
-
             MyPlayerSettingsCard {
-
                 MyPlayerSettingsNavigationRow(
-
-                    icon = Icons.Filled.GraphicEq,
-
-                    title = "Audio & Playback Engine",
-
-                    subtitle = "15-Band EQ, Audio Lab FX, 7 Quality Tiers & Bit-Perfect",
-
+                    icon = Icons.Filled.HighQuality,
+                    title = "Audio & Streaming Output",
+                    subtitle = "Equalizer, Audio FX Lab, Streaming & Download Quality, Bit-Perfect DAC & Hardware Output",
                     onClick = {
-
                         if (onNavigateToAudioPlayback != null) {
-
                             onNavigateToAudioPlayback()
-
                         } else {
-
                             showAudioPlaybackScreen = true
-
                         }
-
                     }
-
-                )
-
-                MyPlayerSettingsDivider()
-
-                MyPlayerSettingsDivider()
-                MyPlayerSettingsNavigationRow(
-                    icon = Icons.Filled.Tune,
-                    title = "Audio FX Lab & 10-Band Rainbow EQ",
-                    subtitle = "Reverb, 3D Spatial, AutoEQ (2500+ headphones), Slowed + Reverb & Apple Crossfade",
-                    onClick = onNavigateToMyPlayerAudioLab
                 )
                 MyPlayerSettingsDivider()
                 MyPlayerSettingsToggleRow(
@@ -1405,16 +1355,15 @@ fun SettingsScreen(
             }
         }
 
-        // Phone-Mic ANC & Desi Mood Vibe-Check Cards directly accessible in Settings!
-        item {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                MyPlayerAncSettingsCard()
-                if (myplayerState != null) {
+        // Desi Mood Vibe-Check Card in Settings
+        if (myplayerState != null) {
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     MyPlayerFunnyVibeCheckSettingsCard(myplayerState = myplayerState)
                 }
             }

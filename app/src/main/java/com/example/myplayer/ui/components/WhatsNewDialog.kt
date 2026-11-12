@@ -47,54 +47,9 @@ object WhatsNewRepository {
 
     fun getCurrentFeatures(): List<WhatsNewFeature> = listOf(
         WhatsNewFeature(
-            icon = Icons.Filled.Link,
-            title = "Search via YouTube Link",
-            description = "Paste any YouTube or YouTube Music link directly into the search bar to instantly stream, match, or download that exact song."
-        ),
-        WhatsNewFeature(
-            icon = Icons.Filled.Headphones,
-            title = "DualBud — Dual Audio Player",
-            description = "Play two completely separate tracks through Left and Right earbuds simultaneously with dedicated volumes and controls."
-        ),
-        WhatsNewFeature(
-            icon = Icons.Filled.Group,
-            title = "SyncPlay — Listen Together",
-            description = "Host or join synchronized listening rooms to experience music in real-time with friends across multiple devices."
-        ),
-        WhatsNewFeature(
-            icon = Icons.Filled.Waves,
-            title = "Studio Master DSP & Audio Lab",
-            description = "10-band ISO equalizer, Studio Master default clarity preset, dynamic sub-bass, 1.22x stereo widener, and analog air exciter."
-        ),
-        WhatsNewFeature(
-            icon = Icons.Filled.AutoAwesome,
-            title = "Apple-Grade AutoMix & Crossfade",
-            description = "Seamless DJ-style crossfade transitions between songs with equal-power volume curves and automatic silence removal."
-        ),
-        WhatsNewFeature(
-            icon = Icons.Filled.Album,
-            title = "Custom Now Playing (6 Styles)",
-            description = "Personalize your vibe: Radial Dial, Turntable Vinyl, Editorial Poster, Timeline, Lyrics Stage, or Classic style."
-        ),
-        WhatsNewFeature(
-            icon = Icons.Filled.DarkMode,
-            title = "Dark Mode by Default",
-            description = "Refined true-black aesthetics on first launch, theme-adaptive floating navigation bar, and fix for tab redirects."
-        ),
-        WhatsNewFeature(
-            icon = Icons.AutoMirrored.Filled.MenuBook,
-            title = "Interactive Tour & User Manual",
-            description = "Step-by-step guided walkthrough of every power feature plus an in-app User Manual accessible anytime from Settings."
-        ),
-        WhatsNewFeature(
-            icon = Icons.Filled.LocalCafe,
-            title = "Support Development (UPI / Coffee)",
-            description = "MyPlayer is 100% free and open with zero ads. You can now support ongoing development directly via GPay, PhonePe, or UPI."
-        ),
-        WhatsNewFeature(
-            icon = Icons.Filled.Backup,
-            title = "Smart Backup & Restore",
-            description = "Export and import your entire library, custom playlists, and audio preferences with one tap across any device."
+            icon = Icons.Filled.BugReport,
+            title = "Minor Bugs Fixed",
+            description = "General stability improvements, playback engine optimizations, and minor bug fixes."
         )
     )
 }
@@ -142,8 +97,9 @@ fun WhatsNewDialog(
                         color = MaterialTheme.colorScheme.primaryContainer,
                         shape = RoundedCornerShape(8.dp)
                     ) {
+                        val displayVersion = if (versionName.startsWith("v", ignoreCase = true)) versionName else "v$versionName"
                         Text(
-                            text = "v$versionName UPDATE",
+                            text = "$displayVersion UPDATE",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 0.8.sp

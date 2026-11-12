@@ -24,9 +24,6 @@ open class LastFmRecommendationSource @Inject constructor(
     override val sourceName: String = "OnDeviceAiSource"
 
     override suspend fun fetchRawRecommendations(seed: RecommendationSeed): List<OnlineSong> {
-        if (seed.songId.isNotBlank() && seed.title.isNotBlank()) {
-            aiModel.onSongTransition(seed.songId, seed.title, seed.artist)
-        }
         return aiModel.generateRecommendations(limit = 40).map { reco ->
             OnlineSong(
                 videoId = reco.videoId,

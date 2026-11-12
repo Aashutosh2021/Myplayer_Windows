@@ -57,44 +57,45 @@ class ITunesArtworkProvider @Inject constructor(
                 .get()
                 .build()
 
-            val response = httpClient.newCall(request).execute()
-            if (!response.isSuccessful) return@withContext null
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use null
 
-            val body = response.body?.string() ?: return@withContext null
-            val root = JSONObject(body)
-            val results = root.optJSONArray("results") ?: return@withContext null
-            if (results.length() == 0) return@withContext null
+                val body = response.body?.string() ?: return@use null
+                val root = JSONObject(body)
+                val results = root.optJSONArray("results") ?: return@use null
+                if (results.length() == 0) return@use null
 
-            for (i in 0 until results.length()) {
-                val item = results.optJSONObject(i) ?: continue
-                val candTrack = item.optString("trackName", "")
-                val candArtist = item.optString("artistName", "")
+                for (i in 0 until results.length()) {
+                    val item = results.optJSONObject(i) ?: continue
+                    val candTrack = item.optString("trackName", "")
+                    val candArtist = item.optString("artistName", "")
 
-                if (!matcher.isValidMatch(title, artist, candTrack, candArtist)) {
-                    continue
+                    if (!matcher.isValidMatch(title, artist, candTrack, candArtist)) {
+                        continue
+                    }
+
+                    val rawArtUrl = item.optString("artworkUrl100", "").takeIf { it.isNotBlank() }
+                        ?: item.optString("artworkUrl60", "").takeIf { it.isNotBlank() }
+                        ?: continue
+
+                    // Upgrade resolution from 100x100 to 1000x1000 master artwork
+                    val highResUrl = if (RESOLUTION_TAG_REGEX.containsMatchIn(rawArtUrl)) {
+                        rawArtUrl.replace(RESOLUTION_TAG_REGEX, TARGET_RESOLUTION_TAG)
+                    } else {
+                        rawArtUrl
+                    }
+
+                    Log.d(TAG, "iTunes matched: '$candTrack' by '$candArtist' -> $highResUrl")
+                    return@withContext ArtworkResult(
+                        url = highResUrl,
+                        provider = name,
+                        width = 1000,
+                        height = 1000
+                    )
                 }
 
-                val rawArtUrl = item.optString("artworkUrl100", "").takeIf { it.isNotBlank() }
-                    ?: item.optString("artworkUrl60", "").takeIf { it.isNotBlank() }
-                    ?: continue
-
-                // Upgrade resolution from 100x100 to 1000x1000 master artwork
-                val highResUrl = if (RESOLUTION_TAG_REGEX.containsMatchIn(rawArtUrl)) {
-                    rawArtUrl.replace(RESOLUTION_TAG_REGEX, TARGET_RESOLUTION_TAG)
-                } else {
-                    rawArtUrl
-                }
-
-                Log.d(TAG, "iTunes matched: '$candTrack' by '$candArtist' -> $highResUrl")
-                return@withContext ArtworkResult(
-                    url = highResUrl,
-                    provider = name,
-                    width = 1000,
-                    height = 1000
-                )
+                null
             }
-
-            null
         } catch (e: Exception) {
             Log.d(TAG, "iTunes search failed for '$query': ${e.message}")
             null

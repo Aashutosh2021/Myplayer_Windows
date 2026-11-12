@@ -91,14 +91,14 @@ class DownloadRepository @Inject constructor(
                 musicDir.mkdirs()
 
                 val safeTitle = song.title
-                    .replace(Regex("[^a-zA-Z0-9 _\\-]"), "")
+                    .replace(Regex("[\\\\/:*?\"<>|\\r\\n\\t]"), "_")
                     .replace(Regex(" {2,}"), " ")
                     .trim()
                     .take(60)
                     .ifBlank { song.videoId }
 
-                val finalFileName = "$safeTitle.m4a"
-                val tmpFileName = "${safeTitle}_${song.videoId}.tmp"
+                val finalFileName = "$safeTitle [${song.videoId}].m4a"
+                val tmpFileName = "$safeTitle [${song.videoId}].tmp"
                 val destFile = File(musicDir, finalFileName)
                 val tempFile = File(musicDir, tmpFileName)
                 tempFileToClean = tempFile

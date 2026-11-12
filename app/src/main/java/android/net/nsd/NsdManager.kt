@@ -70,6 +70,7 @@ class NsdManager {
     private val activeBeaconFlag = ConcurrentHashMap<RegistrationListener, AtomicBoolean>()
 
     private val discoveryListeners = ConcurrentHashMap<DiscoveryListener, ServiceListener>()
+    private val discoveryServiceTypes = ConcurrentHashMap<DiscoveryListener, String>()
     private val activeDiscoveryFlag = ConcurrentHashMap<DiscoveryListener, AtomicBoolean>()
     private val resolvedCache = ConcurrentHashMap<String, NsdServiceInfo>()
 
@@ -159,6 +160,7 @@ class NsdManager {
         val jmType = toJmDnsType(serviceType)
         val running = AtomicBoolean(true)
         activeDiscoveryFlag[listener] = running
+        discoveryServiceTypes[listener] = serviceType
 
         executor.execute {
             listener.onDiscoveryStarted(serviceType)
@@ -224,13 +226,14 @@ class NsdManager {
     fun stopServiceDiscovery(listener: DiscoveryListener) {
         activeDiscoveryFlag.remove(listener)?.set(false)
         val jmListener = discoveryListeners.remove(listener)
+        val svcType = discoveryServiceTypes.remove(listener) ?: SYNC_DEFAULT_TYPE
         executor.execute {
             try {
                 if (jmListener != null) {
-                    jmdnsInstance?.removeServiceListener(toJmDnsType(SYNC_DEFAULT_TYPE), jmListener)
+                    jmdnsInstance?.removeServiceListener(toJmDnsType(svcType), jmListener)
                 }
             } catch (_: Throwable) {}
-            listener.onDiscoveryStopped(SYNC_DEFAULT_TYPE)
+            listener.onDiscoveryStopped(svcType)
         }
     }
 
@@ -330,6 +333,7 @@ class NsdManager {
                                 val name = parts[1]
                                 val ip = parts[2]
                                 val port = parts[3].toIntOrNull() ?: continue
+                                if (registeredServices.values.any { it.name == name && it.port == port }) continue
                                 val addr = InetAddress.getByName(ip)
                                 val info = NsdServiceInfo().apply {
                                     serviceName = name

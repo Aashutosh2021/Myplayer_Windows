@@ -516,8 +516,8 @@ private fun DualBudStatusBanner(
     state: DualBudModeState,
     onSwap: () -> Unit
 ) {
-    val leftSongTitle = state.leftChannel.song?.title ?: "Empty"
-    val rightSongTitle = state.rightChannel.song?.title ?: "Empty"
+    val leftSongTitle = state.physicalLeftSong?.title ?: "Empty"
+    val rightSongTitle = state.physicalRightSong?.title ?: "Empty"
 
     Column(
         modifier = Modifier

@@ -87,6 +87,10 @@ class CommandDispatcher @Inject constructor(
             AriaCommand.DELETE_DOWNLOAD -> AriaPermission.ADMIN
             else -> AriaPermission.STANDARD
         }
+        if (requiredPermission == AriaPermission.ADMIN && !callerVerifier.hasAdminPermission()) {
+            sendErrorResponse(replyTo, commandOrdinal, transactionId, AriaStatus.PERMISSION_DENIED, "Admin permission required")
+            return
+        }
 
         // 4. Asynchronous dispatch to the correct provider with transaction support (Task 4: Streaming Commands & Cancellation)
         val job = dispatcherScope.launch {
@@ -279,9 +283,13 @@ class CommandDispatcher @Inject constructor(
 
             // ── Phase 2 Advanced API additions (Task 4: Streaming Commands & Cancellation) ──
             AriaCommand.CANCEL -> {
-                val transactionToCancel = data.getString(ARIA_KEY_TRANSACTION_ID)
-                if (transactionToCancel != null) {
-                    activeTransactions.remove(transactionToCancel)?.cancel()
+                val id = data.getString(ARIA_KEY_TRANSACTION_ID)
+                if (id != null) {
+                    activeTransactions.forEach { (trxId, job) ->
+                        if (trxId != id) {
+                            job.cancel()
+                        }
+                    }
                     sendResponse(replyTo, AriaGeneralResponse(AriaStatus.SUCCESS, ordinal, transactionId))
                 } else {
                     sendResponse(replyTo, AriaGeneralResponse(AriaStatus.BAD_REQUEST, ordinal, transactionId, "No transaction ID provided to cancel."))
@@ -297,7 +305,18 @@ class CommandDispatcher @Inject constructor(
                 // Continuously stream current positions back (Task 4: Progress updates stream)
                 while (currentCoroutineContext().isActive) {
                     val currentSongResponse = metadataProvider.getCurrentSong(ordinal, transactionId)
-                    sendResponse(replyTo, currentSongResponse)
+                    try {
+                        val message = Message.obtain().apply {
+                            what = currentSongResponse.commandOrdinal
+                            setData(Bundle().apply {
+                                putParcelable("aria_response", currentSongResponse)
+                            })
+                        }
+                        replyTo?.send(message)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to send progress stream response, breaking stream loop", e)
+                        break
+                    }
                     delay(500L) // 500ms intervals
                 }
             }

@@ -465,11 +465,15 @@ object DesktopChunkStreamProxy {
                         val bytes = response.body?.bytes() ?: throw IOException("Empty chunk body")
                         if (bytes.isNotEmpty()) {
                             synchronized(lock) {
-                                val tmp = File(songDir, "chunk_${chunkIndex}.tmp")
-                                tmp.writeBytes(bytes)
-                                if (!tmp.renameTo(chunkFile)) {
-                                    tmp.copyTo(chunkFile, overwrite = true)
-                                    tmp.delete()
+                                val tmpFile = File(songDir, "chunk_${chunkIndex}_${System.nanoTime()}.tmp")
+                                tmpFile.writeBytes(bytes)
+                                if (!tmpFile.renameTo(chunkFile)) {
+                                    if (chunkFile.exists() && chunkFile.length() > 0) {
+                                        tmpFile.delete()
+                                        return chunkFile.readBytes()
+                                    }
+                                    tmpFile.copyTo(chunkFile, overwrite = true)
+                                    tmpFile.delete()
                                 }
                             }
                         }

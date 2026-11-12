@@ -185,7 +185,7 @@ fun NowPlayingScreen(
         wakeLock.setReferenceCounted(false)
         if (keepAwakeLyrics) wakeLock.acquire()
         onDispose {
-            wakeLock.release()
+            if (wakeLock.isHeld) wakeLock.release()
         }
     }
 
@@ -863,8 +863,10 @@ fun NowPlayingScreen(
                         var isDragging by remember { mutableStateOf(false) }
                         var dragProgress by remember { mutableFloatStateOf(0f) }
                         val positionMs = positionState.value
-                        val actualProgress = (positionMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
-                        val currentProgress = if (isDragging) dragProgress else actualProgress
+                        val rawProgress = if (duration > 0L) (positionMs.toFloat() / duration.toFloat()) else 0f
+                        val actualProgress = if (rawProgress.isNaN() || rawProgress.isInfinite()) 0f else rawProgress.coerceIn(0f, 1f)
+                        val safeDrag = if (dragProgress.isNaN() || dragProgress.isInfinite()) 0f else dragProgress.coerceIn(0f, 1f)
+                        val currentProgress = (if (isDragging) safeDrag else actualProgress).coerceIn(0f, 1f)
 
                         Column(
                             modifier = Modifier
@@ -1003,7 +1005,7 @@ fun NowPlayingScreen(
                             }
 
                             Slider(
-                                value = playerVolume,
+                                value = playerVolume.let { if (it.isNaN() || it.isInfinite()) 1f else it.coerceIn(0f, 1f) },
                                 onValueChange = onVolumeChange,
                                 modifier = Modifier
                                     .weight(1f)

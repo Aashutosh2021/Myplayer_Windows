@@ -350,7 +350,7 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier.padding(vertical = 8.dp)
                     ) {
-                        itemsIndexed(jumpBackInSongs, key = { _, song -> song.id }) { index, song ->
+                        itemsIndexed(jumpBackInSongs, key = { index, song -> "${song.id}_${index}" }) { index, song ->
                             JumpBackInCard(
                                 song = song,
                                 isPlaying = currentSong?.id == song.id,
@@ -721,7 +721,7 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     if (recommendations.isNotEmpty()) {
-                        itemsIndexed(recommendations.take(10), key = { _, reco -> reco.videoId }) { index, reco ->
+                        itemsIndexed(recommendations.take(10), key = { index, reco -> "${reco.videoId}_${index}" }) { index, reco ->
                             RecommendedSongCard(
                                 song = reco,
                                 isPlaying = currentSong?.videoId == reco.videoId || currentSong?.id == reco.videoId,

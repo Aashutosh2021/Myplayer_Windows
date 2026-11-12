@@ -21,7 +21,12 @@ class ServiceInfo {
 }
 
 class PackageManager {
-    fun getPackageInfo(packageName: String, flags: Int): PackageInfo = PackageInfo()
+    fun getPackageInfo(packageName: String, flags: Int): PackageInfo {
+        if (packageName == "com.example.myplayer" || packageName == "com.myplayer.app" || packageName == "com.flexfly.ultron") {
+            return PackageInfo()
+        }
+        throw NameNotFoundException("Package not found: $packageName")
+    }
     fun getInstallerPackageName(packageName: String): String? = "com.android.vending"
     fun getInstallSourceInfo(packageName: String): InstallSourceInfo = InstallSourceInfo()
     fun getPackagesForUid(uid: Int): Array<String>? = arrayOf("com.example.myplayer")

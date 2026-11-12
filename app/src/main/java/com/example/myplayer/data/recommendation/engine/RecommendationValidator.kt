@@ -19,8 +19,10 @@ class RecommendationValidator @Inject constructor(
     ): List<RecommendationSong> {
         val seenIds = mutableSetOf<String>()
         val validSongs = mutableListOf<RecommendationSong>()
+        val seedVideoId = seed.songId.removePrefix("online://")
 
         for (candidate in candidates) {
+            val candNormalized = candidate.videoId.removePrefix("online://")
             // Reject: Null/Blank IDs
             if (candidate.videoId.isBlank()) {
                 logger.log("Validation Failed: Blank videoId found")
@@ -28,13 +30,13 @@ class RecommendationValidator @Inject constructor(
             }
 
             // Reject: Current playing song
-            if (seed.songId.isNotBlank() && candidate.videoId == seed.songId) {
+            if (seedVideoId.isNotBlank() && (candNormalized == seedVideoId || candidate.videoId == seed.songId || candidate.videoId == "online://$seedVideoId")) {
                 // This is expected, no need to log as failure unless verbose
                 continue
             }
 
             // Reject: Duplicate songs
-            if (!seenIds.add(candidate.videoId)) {
+            if (!seenIds.add(candNormalized)) {
                 logger.log("Validation Failed: Duplicate song ${candidate.videoId}")
                 continue
             }

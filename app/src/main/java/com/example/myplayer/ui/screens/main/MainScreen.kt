@@ -148,6 +148,10 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
     }
 
     // Remote push notification handling & deep redirect to settings
+    LaunchedEffect(Unit) {
+        MyPlayerRemoteNotificationManager.startAutoPolling(context)
+    }
+
     LaunchedEffect(MyPlayerRemoteNotificationManager.pendingNavigateToSettings) {
         if (MyPlayerRemoteNotificationManager.pendingNavigateToSettings) {
             MyPlayerRemoteNotificationManager.pendingNavigateToSettings = false
@@ -162,6 +166,21 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
             onNavigateToSettings = {
                 MyPlayerRemoteNotificationManager.dismissActivePopup()
                 navController.navigate(Screen.Settings.route) { launchSingleTop = true }
+            }
+        )
+    }
+
+    // Funny mood / vibe-check streak tracker + its popup (hoisted so active even when MiniPlayer is hidden)
+    LaunchedEffect(displayTitle, displayArtist, isPlaying) {
+        MyPlayerVibeCheckManager.onPlaybackTick(displayTitle ?: "", displayArtist ?: "", "", isPlaying)
+    }
+    MyPlayerVibeCheckManager.activePopup?.let { event ->
+        MyPlayerVibeCheckPopupDialog(
+            event = event,
+            onDismiss = { MyPlayerVibeCheckManager.dismissPopup() },
+            onSwitchVibeClick = {
+                MyPlayerVibeCheckManager.dismissPopup()
+                viewModel.skipToNext()
             }
         )
     }

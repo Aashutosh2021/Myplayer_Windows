@@ -187,9 +187,9 @@ fun Modifier.carousel3DItem(
 fun Modifier.slidePopIn(
     index: Int = 0
 ): Modifier = composed {
-    var isVisible by remember { mutableStateOf(false) }
+    var isVisible by remember(index) { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(index) {
         val staggerDelay = (index % 6) * 35L
         if (staggerDelay > 0L) delay(staggerDelay)
         isVisible = true

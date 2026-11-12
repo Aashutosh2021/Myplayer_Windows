@@ -15,6 +15,10 @@ class SleepTimerManager @Inject constructor() {
     private var sleepTimerJob: Job? = null
 
     fun startSleepTimer(scope: CoroutineScope, minutes: Int, onTimerEnd: () -> Unit) {
+        if (minutes <= 0) {
+            cancelSleepTimer()
+            return
+        }
         sleepTimerJob?.cancel()
         val totalSeconds = minutes * 60L
         _sleepTimerRemainingSeconds.value = totalSeconds

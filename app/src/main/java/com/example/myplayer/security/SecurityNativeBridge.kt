@@ -69,8 +69,8 @@ class SecurityNativeBridge @Inject constructor() {
         if (!isNativeLibraryAvailable) return 0
         return try {
             nativeRunAllChecks()
-        } catch (e: Exception) {
-            Log.e(TAG, "nativeRunAllChecks exception", e)
+        } catch (t: Throwable) {
+            Log.e(TAG, "nativeRunAllChecks throwable", t)
             0
         }
     }

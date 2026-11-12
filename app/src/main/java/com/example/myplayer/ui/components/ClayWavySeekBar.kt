@@ -51,11 +51,10 @@ fun ClayWavySeekBar(
     var isDragging by remember { mutableStateOf(false) }
     var dragProgress by remember { mutableFloatStateOf(0f) }
 
-    val actualProgress = if (durationMs > 0) {
-        (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
-    } else 0f
-
-    val displayedProgress = if (isDragging) dragProgress else actualProgress
+    val rawProgress = if (durationMs > 0L) (positionMs.toFloat() / durationMs.toFloat()) else 0f
+    val actualProgress = if (rawProgress.isNaN() || rawProgress.isInfinite()) 0f else rawProgress.coerceIn(0f, 1f)
+    val safeDragProgress = if (dragProgress.isNaN() || dragProgress.isInfinite()) 0f else dragProgress.coerceIn(0f, 1f)
+    val displayedProgress = (if (isDragging) safeDragProgress else actualProgress).coerceIn(0f, 1f)
 
     // Animate wave amplitude: full amplitude while playing, flat (0f) when paused or scrubbing
     val amplitudeTransition by animateFloatAsState(
@@ -83,36 +82,46 @@ fun ClayWavySeekBar(
             .pointerInput(durationMs) {
                 detectTapGestures(
                     onPress = { offset ->
-                        val tapProgress = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
-                        onSeek((tapProgress * durationMs.coerceAtLeast(1L)).toLong())
+                        if (size.width <= 0) return@detectTapGestures
+                        val rawTap = offset.x / size.width.toFloat()
+                        val tapProgress = if (rawTap.isNaN() || rawTap.isInfinite()) 0f else rawTap.coerceIn(0f, 1f)
+                        val dur = durationMs.coerceAtLeast(0L)
+                        if (dur > 0L) onSeek((tapProgress * dur).toLong())
                     }
                 )
             }
             .pointerInput(durationMs) {
                 detectHorizontalDragGestures(
                     onDragStart = { offset ->
+                        if (size.width <= 0) return@detectHorizontalDragGestures
                         isDragging = true
-                        dragProgress = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
+                        val rawDrag = offset.x / size.width.toFloat()
+                        dragProgress = if (rawDrag.isNaN() || rawDrag.isInfinite()) 0f else rawDrag.coerceIn(0f, 1f)
                     },
                     onDragEnd = {
                         isDragging = false
-                        onSeek((dragProgress * durationMs.coerceAtLeast(1L)).toLong())
+                        val dur = durationMs.coerceAtLeast(0L)
+                        if (dur > 0L) onSeek((dragProgress * dur).toLong())
                     },
                     onDragCancel = {
                         isDragging = false
                     },
                     onHorizontalDrag = { _, dragAmount ->
+                        if (size.width <= 0) return@detectHorizontalDragGestures
                         val delta = dragAmount / size.width.toFloat()
-                        dragProgress = (dragProgress + delta).coerceIn(0f, 1f)
+                        if (!delta.isNaN() && !delta.isInfinite()) {
+                            dragProgress = (dragProgress + delta).coerceIn(0f, 1f)
+                        }
                     }
                 )
             }
     ) {
         Canvas(modifier = Modifier.matchParentSize()) {
+            if (size.width <= 0f || size.height <= 0f) return@Canvas
             val width = size.width
             val height = size.height
             val centerY = height / 2f
-            val activeEndPx = (displayedProgress * width).coerceIn(0f, width)
+            val activeEndPx = (displayedProgress * width).let { if (it.isNaN() || it.isInfinite()) 0f else it.coerceIn(0f, width) }
 
             // 1. Draw Inactive Track (Remaining part of the song)
             if (activeEndPx < width) {

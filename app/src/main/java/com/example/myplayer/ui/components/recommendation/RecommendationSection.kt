@@ -3,6 +3,7 @@ package com.example.myplayer.ui.components.recommendation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -46,7 +47,7 @@ fun RecommendationSection(
                 contentPadding = PaddingValues(horizontal = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                items(recommendations.take(10), key = { it.videoId }) { song ->
+                itemsIndexed(recommendations.take(10), key = { index, song -> "${song.videoId}_${index}" }) { index, song ->
                     RecommendedSongCard(
                         song = song,
                         onPlayClick = { onPlayClick(song) },

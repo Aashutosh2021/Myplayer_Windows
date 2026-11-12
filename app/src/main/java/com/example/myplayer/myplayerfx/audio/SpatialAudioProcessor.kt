@@ -103,6 +103,7 @@ class SpatialAudioProcessor(private val service: AudioFxService) : AudioProcesso
                 out.putShort(toPcm(renderer.right * SurroundGain))
             }
             out.flip()
+            inputBuffer.position(inputBuffer.limit())
             return
         }
 
@@ -158,6 +159,7 @@ class SpatialAudioProcessor(private val service: AudioFxService) : AudioProcesso
             }
         }
         out.flip()
+        inputBuffer.position(inputBuffer.limit())
     }
 
     private fun glide(value: Float, target: Float, step: Float): Float =

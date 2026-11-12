@@ -45,31 +45,35 @@ abstract class AriaConnectorService : Service() {
 
     /** Push a typed event to ARIA. */
     protected fun notifyEvent(event: EcosystemEvent) {
-        val n = callbacks.beginBroadcast()
-        try {
-            val container = EcosystemEventContainer(event)
-            for (i in 0 until n) {
-                try {
-                    callbacks.getBroadcastItem(i).onEvent(container)
-                } catch (_: Exception) {}
+        synchronized(callbacks) {
+            val n = callbacks.beginBroadcast()
+            try {
+                val container = EcosystemEventContainer(event)
+                for (i in 0 until n) {
+                    try {
+                        callbacks.getBroadcastItem(i).onEvent(container)
+                    } catch (_: Exception) {}
+                }
+            } finally {
+                callbacks.finishBroadcast()
             }
-        } finally {
-            callbacks.finishBroadcast()
         }
     }
 
     /** Call when your app's capability set changes at runtime. */
     protected fun notifyCapabilitiesChanged() {
         val caps = supportedCapabilities().toList()
-        val n = callbacks.beginBroadcast()
-        try {
-            for (i in 0 until n) {
-                try {
-                    callbacks.getBroadcastItem(i).onCapabilitiesChanged(caps)
-                } catch (_: Exception) {}
+        synchronized(callbacks) {
+            val n = callbacks.beginBroadcast()
+            try {
+                for (i in 0 until n) {
+                    try {
+                        callbacks.getBroadcastItem(i).onCapabilitiesChanged(caps)
+                    } catch (_: Exception) {}
+                }
+            } finally {
+                callbacks.finishBroadcast()
             }
-        } finally {
-            callbacks.finishBroadcast()
         }
     }
 
@@ -126,7 +130,7 @@ abstract class AriaConnectorService : Service() {
                     AppResponse.Error(AppResponse.Error.ErrorCode.COMMAND_FAILED, e.message ?: "Error")
                 }
             }
-            runBlocking { job.join() }
+            runBlocking(Dispatchers.IO) { job.join() }
             return AppResponseContainer(result)
         }
 
@@ -164,7 +168,7 @@ abstract class AriaConnectorService : Service() {
                     AppResponse.Error(AppResponse.Error.ErrorCode.COMMAND_FAILED, e.message ?: "Error")
                 }
             }
-            runBlocking { job.join() }
+            runBlocking(Dispatchers.IO) { job.join() }
             return result.toJson()
         }
     }

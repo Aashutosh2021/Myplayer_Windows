@@ -8,7 +8,7 @@ import com.example.myplayer.data.recommendation.model.RecommendationSong
 import com.example.myplayer.data.recommendation.strategy.RecommendationStrategy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -29,29 +29,30 @@ class RecommendationQueueManager @Inject constructor(
     private val logger: RecommendationLogger
 ) {
     private var session: RecommendationSession? = null
-    private val scope = CoroutineScope(Dispatchers.IO + Job())
-    private var isRefilling = false
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val isRefilling = java.util.concurrent.atomic.AtomicBoolean(false)
     
     // 15 minutes TTL
     private val QUEUE_TTL_MS = 15L * 60L * 1000L
 
     fun updateSession(seed: RecommendationSeed) {
-        val isNewSeed = session != null && session?.seedSong?.songId != seed.songId
+        val normalizedSeed = seed.copy(songId = seed.songId.removePrefix("online://"))
+        val isNewSeed = session != null && session?.seedSong?.songId != normalizedSeed.songId
         // Check if this song was served as a recommendation or was queued in this session
-        val isContinuationOfSession = seed.songId.isNotBlank() && (
-            history.hasBeenServed(seed.songId) ||
-            queue.contains(seed.songId) ||
-            recentPlaybackWindow.contains(seed.songId)
+        val isContinuationOfSession = normalizedSeed.songId.isNotBlank() && (
+            history.hasBeenServed(normalizedSeed.songId) ||
+            queue.contains(normalizedSeed.songId) ||
+            recentPlaybackWindow.contains(normalizedSeed.songId)
         )
 
         if (session == null) {
-            logger.logEvent("SessionStarted", mapOf("seedSongId" to seed.songId))
-            session = RecommendationSession(seedSong = seed)
+            logger.logEvent("SessionStarted", mapOf("seedSongId" to normalizedSeed.songId))
+            session = RecommendationSession(seedSong = normalizedSeed)
             queue.clear()
             history.clear()
             recentPlaybackWindow.clear()
         } else {
-            session?.seedSong = seed
+            session?.seedSong = normalizedSeed
 
             // If the queue has expired (15m TTL), clear expired entries
             if (queue.isExpired(QUEUE_TTL_MS)) {
@@ -62,25 +63,25 @@ class RecommendationQueueManager @Inject constructor(
             } else if (isNewSeed && !isContinuationOfSession) {
                 // User explicitly selected an unrelated song from outside the recommendation stream.
                 // Reset the queue for the new seed.
-                logger.log("Manual new seed song detected (${seed.songId}), refreshing recommendation queue")
+                logger.log("Manual new seed song detected (${normalizedSeed.songId}), refreshing recommendation queue")
                 val sizeBeforeClear = queue.size()
                 queue.clear()
                 health.recordExpiredEntries(sizeBeforeClear)
             } else {
                 // Continuation of recommendation autoplay — preserve existing recommendations in queue!
                 // Simply remove the newly started song so it isn't recommended again.
-                if (seed.songId.isNotBlank()) {
-                    queue.remove(seed.songId)
+                if (normalizedSeed.songId.isNotBlank()) {
+                    queue.remove(normalizedSeed.songId)
                 }
                 logger.log("Continuing recommendation session with ${queue.size()} tracks remaining in queue")
             }
         }
 
-        if (seed.songId.isNotBlank()) {
-            recentPlaybackWindow.add(seed.songId)
-            history.recordState(seed.songId, RecommendationHistoryState.PLAYED)
+        if (normalizedSeed.songId.isNotBlank()) {
+            recentPlaybackWindow.add(normalizedSeed.songId)
+            history.recordState(normalizedSeed.songId, RecommendationHistoryState.PLAYED)
         }
-        checkAndRefillQueue(seed)
+        checkAndRefillQueue(normalizedSeed)
     }
 
     @Synchronized
@@ -182,7 +183,7 @@ class RecommendationQueueManager @Inject constructor(
 
     private fun checkAndRefillQueue(seed: RecommendationSeed?) {
         if (seed == null) return
-        if (isRefilling) return
+        if (!isRefilling.compareAndSet(false, true)) return
 
         if (policy.shouldRefill(queue.size())) {
             val sizeBefore = queue.size()
@@ -190,7 +191,6 @@ class RecommendationQueueManager @Inject constructor(
                 "sizeBefore" to sizeBefore,
                 "targetSize" to policy.targetSize
             ))
-            isRefilling = true
             scope.launch {
                 val fillTime = measureTimeMillis {
                     try {
@@ -217,7 +217,6 @@ class RecommendationQueueManager @Inject constructor(
                                 it.recommendationsQueued += ranked.size
                             }
                         }
-                        metrics.recordQueueRefresh(0, ranked.size)
                         
                         logger.logEvent("QueueRefillCompleted", mapOf(
                             "generated" to recommendations.size,
@@ -229,16 +228,18 @@ class RecommendationQueueManager @Inject constructor(
                         logger.error("Error during queue refill", e)
                         logger.logEvent("QueueRefillFailed", mapOf("reason" to (e.message ?: "Unknown")))
                     } finally {
-                        isRefilling = false
+                        isRefilling.set(false)
                     }
                 }
                 session?.let { it.totalRecommendationTimeMs += fillTime }
-                metrics.recordQueueRefresh(fillTime, 0)
+                metrics.recordQueueRefresh(fillTime, queue.size())
                 logger.logEvent("QueueRefillMetrics", mapOf(
                     "fillTimeMs" to fillTime,
                     "sessionId" to (session?.sessionId ?: "none")
                 ))
             }
+        } else {
+            isRefilling.set(false)
         }
     }
 }

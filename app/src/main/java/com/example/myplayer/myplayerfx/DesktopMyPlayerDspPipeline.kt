@@ -100,9 +100,8 @@ object DesktopMyPlayerDspPipeline {
         surroundSpatial: SurroundSpatialAudioProcessor?
     ): List<AudioProcessor> = buildList {
         if (master != null) add(master)
-        if (surroundSpatial != null) add(surroundSpatial)
         val fxService = audioFx ?: return@buildList
-        add(SpatialAudioProcessor(fxService))
+        if (surroundSpatial != null) { add(surroundSpatial) } else { add(SpatialAudioProcessor(fxService)) }
         add(ReverbAudioProcessor(fxService))
         add(LoudnessAudioProcessor(fxService))
     }

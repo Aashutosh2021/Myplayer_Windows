@@ -94,10 +94,10 @@ class AriaStateRecoveryManager @Inject constructor(
             }
 
             if (songsToRestore.isNotEmpty()) {
-                val startIndex = songIds.indexOf(currentSongId).coerceAtLeast(0)
+                val startIndex = songsToRestore.indexOfFirst { it.id == currentSongId }.coerceAtLeast(0)
                 
                 // Build the queue in MusicController and immediately pause/seek to avoid blasting audio
-                musicController.playSongs(songsToRestore, startIndex)
+                musicController.playSongs(songsToRestore, startIndex = startIndex)
                 musicController.pause()
                 musicController.seekTo(positionMs)
                 musicController.setRepeatMode(repeatMode)

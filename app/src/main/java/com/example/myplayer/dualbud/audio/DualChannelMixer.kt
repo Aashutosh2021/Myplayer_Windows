@@ -207,8 +207,8 @@ class DualChannelMixer(
             rightBuffer.read(rightScratch, 0, CHUNK_FRAMES)
         } else 0
 
-        // If neither stream has data and neither is playing, yield
-        if (leftAvailable == 0 && rightAvailable == 0 && !isLeftPlaying && !isRightPlaying) {
+        // If neither stream has data available, yield so runMixingLoop sleeps briefly instead of busy-spinning
+        if (leftAvailable == 0 && rightAvailable == 0) {
             return 0
         }
 

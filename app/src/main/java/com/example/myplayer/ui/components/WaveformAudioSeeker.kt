@@ -32,12 +32,14 @@ fun WaveformAudioSeeker(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val duration = durationMs.coerceAtLeast(1L)
+    val duration = if (durationMs > 0L) durationMs else 1L
     var isDragging by remember { mutableStateOf(false) }
     var dragProgress by remember { mutableFloatStateOf(0f) }
 
-    val actualProgress = (positionMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
-    val currentProgress = if (isDragging) dragProgress else actualProgress
+    val rawProgress = if (durationMs > 0L) (positionMs.toFloat() / duration.toFloat()) else 0f
+    val actualProgress = if (rawProgress.isNaN() || rawProgress.isInfinite()) 0f else rawProgress.coerceIn(0f, 1f)
+    val safeDragProgress = if (dragProgress.isNaN() || dragProgress.isInfinite()) 0f else dragProgress.coerceIn(0f, 1f)
+    val currentProgress = (if (isDragging) safeDragProgress else actualProgress).coerceIn(0f, 1f)
 
     val barCount = 42
 
@@ -57,23 +59,33 @@ fun WaveformAudioSeeker(
                 .height(48.dp)
                 .pointerInput(duration) {
                     detectTapGestures { offset ->
-                        val newProgress = (offset.x / size.width).coerceIn(0f, 1f)
-                        onSeek((newProgress * duration).toLong())
+                        if (size.width <= 0) return@detectTapGestures
+                        val rawProg = offset.x / size.width
+                        val newProgress = if (rawProg.isNaN() || rawProg.isInfinite()) 0f else rawProg.coerceIn(0f, 1f)
+                        if (durationMs > 0L) onSeek((newProgress * duration).toLong())
                     }
                 }
                 .pointerInput(duration) {
                     detectDragGestures(
                         onDragStart = { offset ->
+                            if (size.width <= 0) return@detectDragGestures
                             isDragging = true
-                            dragProgress = (offset.x / size.width).coerceIn(0f, 1f)
+                            val rawDrag = offset.x / size.width
+                            dragProgress = if (rawDrag.isNaN() || rawDrag.isInfinite()) 0f else rawDrag.coerceIn(0f, 1f)
                         },
                         onDrag = { change, _ ->
                             change.consume()
-                            dragProgress = (change.position.x / size.width).coerceIn(0f, 1f)
+                            if (size.width > 0) {
+                                val delta = change.position.x / size.width
+                                if (!delta.isNaN() && !delta.isInfinite()) {
+                                    dragProgress = delta.coerceIn(0f, 1f)
+                                }
+                            }
                         },
                         onDragEnd = {
+                            val safeProgress = if (dragProgress.isNaN() || dragProgress.isInfinite()) 0f else dragProgress.coerceIn(0f, 1f)
+                            if (durationMs > 0L) onSeek((safeProgress * duration).toLong())
                             isDragging = false
-                            onSeek((dragProgress * duration).toLong())
                         },
                         onDragCancel = {
                             isDragging = false
@@ -81,11 +93,12 @@ fun WaveformAudioSeeker(
                     )
                 }
         ) {
+            if (size.width <= 0f || size.height <= 0f) return@Canvas
             val totalWidth = size.width
             val totalHeight = size.height
             val barWidth = 3.5.dp.toPx()
             val totalBarsWidth = barCount * barWidth
-            val spacing = ((totalWidth - totalBarsWidth) / (barCount - 1)).coerceAtLeast(1.5.dp.toPx())
+            val spacing = ((totalWidth - totalBarsWidth) / (barCount - 1)).let { if (it.isNaN() || it.isInfinite()) 1.5.dp.toPx() else it.coerceAtLeast(1.5.dp.toPx()) }
 
             for (i in 0 until barCount) {
                 val fraction = i.toFloat() / (barCount - 1).toFloat()

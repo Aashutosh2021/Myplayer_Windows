@@ -95,7 +95,7 @@ class MediaScanner @Inject constructor(
 
     private fun generateIdForPath(path: String): String {
         val md = MessageDigest.getInstance("MD5")
-        val bytes = md.digest(path.toByteArray())
+        val bytes = md.digest(path.toByteArray(Charsets.UTF_8))
         return bytes.joinToString("") { "%02x".format(it) }
     }
 

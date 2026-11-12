@@ -127,6 +127,7 @@ class SpatialAudioProcessor @Inject constructor() : AudioProcessor {
                 }
             }
             out.flip()
+            inputBuffer.position(inputBuffer.limit())
             return
         }
 
@@ -139,6 +140,7 @@ class SpatialAudioProcessor @Inject constructor() : AudioProcessor {
         if (target == 0f && amount == 0f && monoTarget == 0f && monoAmount == 0f) {
             out.put(inputBuffer)
             out.flip()
+            inputBuffer.position(inputBuffer.limit())
             return
         }
 
@@ -202,6 +204,7 @@ class SpatialAudioProcessor @Inject constructor() : AudioProcessor {
             }
         }
         out.flip()
+        inputBuffer.position(inputBuffer.limit())
     }
 
     private fun glide(value: Float, target: Float, step: Float): Float =

@@ -20237,6 +20237,8 @@ fun MyPlayerAppearanceSettingsScreen(
                             value = myplayerState.blurStrengthPx,
                             onValueChange = {
                                 myplayerState.blurStrengthPx = it
+                            },
+                            onValueChangeFinished = {
                                 myplayerState.saveAppearanceToPrefs()
                             },
                             valueRange = 0f..50f,
@@ -24245,11 +24247,13 @@ private fun MyPlayerLabeledSlider(
 
 
 
+        val safeValue = (if (value.isNaN() || value.isInfinite()) valueRange.start else value).coerceIn(valueRange.start, valueRange.endInclusive)
+
         Slider(
 
 
 
-            value = value,
+            value = safeValue,
 
 
 

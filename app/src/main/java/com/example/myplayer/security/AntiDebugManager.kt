@@ -136,15 +136,9 @@ class AntiDebugManager @Inject constructor(
      * If it's already in use, a JDWP session is active (debugger connected).
      */
     private fun checkJdwpPort(): Boolean {
-        return try {
-            ServerSocket(JDWP_PORT).use { _ ->
-                // Could bind — port was free — no active JDWP session
-                false
-            }
-        } catch (e: Exception) {
-            // Could NOT bind — port is in use — JDWP is active
-            true
-        }
+        // Disabled on Windows Desktop to avoid triggering Windows Defender Firewall prompts
+        // and false positives when port 8600 is occupied by unrelated local services.
+        return false
     }
 
     /**

@@ -33,10 +33,11 @@ class AudioTagHelper @Inject constructor(
             val request = Request.Builder()
                 .url(thumbnailUrl)
                 .build()
-            val response = okHttpClient.newCall(request).execute()
-            if (response.isSuccessful) {
-                response.body?.bytes()
-            } else null
+            okHttpClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    response.body?.bytes()
+                } else null
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to download cover art from $thumbnailUrl", e)
             null

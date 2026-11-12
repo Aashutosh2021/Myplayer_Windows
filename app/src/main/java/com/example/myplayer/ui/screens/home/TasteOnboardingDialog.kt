@@ -280,7 +280,7 @@ fun TasteOnboardingDialog(
                                 val typed = customArtistInput.trim()
                                 when (val st = searchState) {
                                     is ArtistSearchState.Found ->
-                                        addArtist((st.artists.firstOrNull { it.name.equals(typed, true) } ?: st.artists.first()).name)
+                                        st.artists.firstOrNull { it.name.equals(typed, true) }?.name?.let { addArtist(it) } ?: st.artists.firstOrNull()?.name?.let { addArtist(it) }
                                     ArtistSearchState.Offline -> if (typed.isNotBlank()) addArtist(typed)
                                     else -> Unit // not found / still searching: only real artists are added
                                 }

@@ -57,14 +57,16 @@ fun RadialAudioController(
 ) {
     // positionMs accepted as Long; caller already passes positionState.value so
     // reads are scoped to this composable only (Phase 4 handled in caller).
-    val duration = durationMs.coerceAtLeast(1L)
+    val duration = if (durationMs > 0L) durationMs else 1L
     val density = LocalDensity.current
 
     var isDragging by remember { mutableStateOf(false) }
     var dragProgress by remember { mutableFloatStateOf(0f) }
 
-    val actualProgress = (positionMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
-    val currentProgress = if (isDragging) dragProgress else actualProgress
+    val rawProgress = if (duration > 0L) (positionMs.toFloat() / duration.toFloat()) else 0f
+    val actualProgress = if (rawProgress.isNaN() || rawProgress.isInfinite()) 0f else rawProgress.coerceIn(0f, 1f)
+    val safeDragProgress = if (dragProgress.isNaN() || dragProgress.isInfinite()) 0f else dragProgress.coerceIn(0f, 1f)
+    val currentProgress = (if (isDragging) safeDragProgress else actualProgress).coerceIn(0f, 1f)
 
     // Concentric pulsing aura animation when playing
     val pulseScale: Float
@@ -114,6 +116,7 @@ fun RadialAudioController(
 
         // ── Phase 2: Pulse-only Canvas (reads pulseScale/pulseAlpha; never triggers arc redraws) ──
         Canvas(modifier = Modifier.fillMaxSize()) {
+            if (size.width <= 0f || size.height <= 0f) return@Canvas
             val centerX = size.width / 2f
             val centerY = size.height / 2f
             val baseRadius = 38.dp.toPx()
@@ -153,15 +156,17 @@ fun RadialAudioController(
                 .pointerInput(duration) {
                     // Tap: update local progress only; fire seek on release.
                     fun angleToProgress(offset: Offset): Float {
+                        if (size.width <= 0 || size.height <= 0) return 0f
                         val centerX = size.width / 2f
                         val centerY = size.height / 2f
                         val dx = offset.x - centerX
                         val dy = offset.y - centerY
                         var angleDeg = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
+                        if (angleDeg.isNaN() || angleDeg.isInfinite()) return 0f
                         if (angleDeg < 0) angleDeg += 360f
                         val relativeAngle = if (angleDeg >= 135f) angleDeg - 135f else (angleDeg + 360f) - 135f
-                        return if (relativeAngle <= 270f) (relativeAngle / 270f).coerceIn(0f, 1f)
-                        else if (relativeAngle < 315f) 1f else 0f
+                        val p = if (relativeAngle <= 270f) (relativeAngle / 270f) else if (relativeAngle < 315f) 1f else 0f
+                        return if (p.isNaN() || p.isInfinite()) 0f else p.coerceIn(0f, 1f)
                     }
 
                     detectTapGestures(
@@ -177,15 +182,17 @@ fun RadialAudioController(
                 }
                 .pointerInput(duration) {
                     fun angleToProgress(offset: Offset): Float {
+                        if (size.width <= 0 || size.height <= 0) return 0f
                         val centerX = size.width / 2f
                         val centerY = size.height / 2f
                         val dx = offset.x - centerX
                         val dy = offset.y - centerY
                         var angleDeg = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
+                        if (angleDeg.isNaN() || angleDeg.isInfinite()) return 0f
                         if (angleDeg < 0) angleDeg += 360f
                         val relativeAngle = if (angleDeg >= 135f) angleDeg - 135f else (angleDeg + 360f) - 135f
-                        return if (relativeAngle <= 270f) (relativeAngle / 270f).coerceIn(0f, 1f)
-                        else if (relativeAngle < 315f) 1f else 0f
+                        val p = if (relativeAngle <= 270f) (relativeAngle / 270f) else if (relativeAngle < 315f) 1f else 0f
+                        return if (p.isNaN() || p.isInfinite()) 0f else p.coerceIn(0f, 1f)
                     }
 
                     detectDragGestures(
@@ -209,9 +216,11 @@ fun RadialAudioController(
                     )
                 }
         ) {
+            if (size.width <= 0f || size.height <= 0f) return@Canvas
             val centerX = size.width / 2f
             val centerY = size.height / 2f
-            val arcRadius = (min(size.width, size.height) / 2f) - thumbRadiusPx - 4.dp.toPx()
+            val arcRadius = ((min(size.width, size.height) / 2f) - thumbRadiusPx - 4.dp.toPx()).coerceAtLeast(0f)
+            if (arcRadius <= 0f) return@Canvas
 
             // 1. Background Inactive Arc (135° to 405°, sweep 270°)
             val arcRectTopLeft = Offset(centerX - arcRadius, centerY - arcRadius)
@@ -228,7 +237,8 @@ fun RadialAudioController(
             )
 
             // 3. Active Progress Arc
-            val activeSweep = (currentProgress * 270f).coerceIn(0.1f, 270f)
+            val sweep = currentProgress * 270f
+            val activeSweep = (if (sweep.isNaN() || sweep.isInfinite()) 0.1f else sweep).coerceIn(0.1f, 270f)
             drawArc(
                 color = Primary,
                 startAngle = 135f,

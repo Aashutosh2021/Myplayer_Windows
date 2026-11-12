@@ -84,6 +84,11 @@ class ReverbAudioProcessor(private val service: AudioFxService) : AudioProcessor
         }
         roomEmpty = false
         val frames = bytes / (2 * channels)
+        if (frames == 0) {
+            inputBuffer.position(inputBuffer.limit())
+            out.flip()
+            return
+        }
 
         // room size and damping set the combs once per buffer; they don't zip
         val feedback = params.roomSize.coerceIn(0f, 1f) * ScaleRoom + OffsetRoom
@@ -155,6 +160,7 @@ class ReverbAudioProcessor(private val service: AudioFxService) : AudioProcessor
         dryGain = targetDry
         mix = targetMix
         out.flip()
+        inputBuffer.position(inputBuffer.limit())
     }
 
     private fun clearRoom() {

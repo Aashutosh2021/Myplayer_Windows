@@ -68,7 +68,7 @@ class MusicController @Inject constructor(
     private var mediaController: MediaController? = null
 
     // Keep a local copy of the queue so we can map MediaItem → SongEntity
-    private val _songQueue = mutableListOf<SongEntity>()
+    private val _songQueue = java.util.Collections.synchronizedList(mutableListOf<SongEntity>())
     private val _playbackQueue = MutableStateFlow<List<SongEntity>>(emptyList())
     val playbackQueue: StateFlow<List<SongEntity>> = _playbackQueue.asStateFlow()
 
@@ -568,6 +568,7 @@ class MusicController @Inject constructor(
 
         // 5. Repeat All: loop back to index 0
         if (playbackStateManager.repeatMode.value == Player.REPEAT_MODE_ALL && _songQueue.isNotEmpty()) {
+            playbackCompletionGuard.reset()
             if (currentIndex in _songQueue.indices) playbackHistory.push(currentIndex)
             Log.d("MusicController", "Queue loop under REPEAT_MODE_ALL, restarting from index 0")
             playOnlineQueueIndex(0)
@@ -1375,12 +1376,12 @@ class MusicController @Inject constructor(
                 val targetItem = mediaItems.getOrNull(startIndex)
                 val mId = targetItem?.mediaId
                 val uriStr = targetItem?.localConfiguration?.uri?.toString()
-                val song = if (targetItem != null) {
+                val song = (if (targetItem != null) {
                     _songQueue.firstOrNull {
                         (!mId.isNullOrBlank() && (it.id == mId || it.videoId == mId)) ||
                         (!uriStr.isNullOrBlank() && it.path == uriStr)
                     }
-                } else null ?: if (mediaItems.size == _songQueue.size && startIndex in _songQueue.indices) {
+                } else null) ?: if (mediaItems.size == _songQueue.size && startIndex in _songQueue.indices) {
                     _songQueue[startIndex]
                 } else null
 
@@ -1552,7 +1553,7 @@ class MusicController @Inject constructor(
 
     fun getMediaController(): MediaController? = mediaController
 
-    fun getSongQueue(): List<SongEntity> = _songQueue
+    fun getSongQueue(): List<SongEntity> = synchronized(_songQueue) { _songQueue.toList() }
 
     fun setPlaybackSpeed(speed: Float) {
         runOnApplicationThread { it.setPlaybackSpeed(speed) }

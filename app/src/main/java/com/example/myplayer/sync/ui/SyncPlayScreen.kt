@@ -101,10 +101,18 @@ fun SyncPlayScreen(
         mutableIntStateOf(if (state.role != SyncRole.NONE) 1 else 0)
     }
 
-    // Automatically switch tab if a session is active in one of the modes
+    var prevSyncRole by remember { mutableStateOf(state.role) }
+    var prevLtRole by remember { mutableStateOf(ltState.role) }
+
+    // Automatically switch tab if a session transitions to active in one of the modes
     LaunchedEffect(state.role, ltState.role) {
-        if (ltState.role != LtRole.NONE) selectedTab = 0
-        else if (state.role != SyncRole.NONE) selectedTab = 1
+        if (ltState.role != LtRole.NONE && prevLtRole == LtRole.NONE) {
+            selectedTab = 0
+        } else if (state.role != SyncRole.NONE && prevSyncRole == SyncRole.NONE) {
+            selectedTab = 1
+        }
+        prevSyncRole = state.role
+        prevLtRole = ltState.role
     }
 
     var showJoinByIpDialog by remember { mutableStateOf(false) }

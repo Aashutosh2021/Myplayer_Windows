@@ -4,7 +4,7 @@ import android.content.Context
 import android.net.Uri
 import java.io.File
 
-open class DocumentFile(private val file: File) {
+open class DocumentFile(private var file: File) {
     val uri: Uri get() = Uri.fromFile(file)
     val name: String? get() = file.name
     val isDirectory: Boolean get() = file.isDirectory
@@ -15,8 +15,15 @@ open class DocumentFile(private val file: File) {
     fun canWrite(): Boolean = file.canWrite()
     fun delete(): Boolean = file.delete()
     fun renameTo(displayName: String): Boolean {
-        val dest = File(file.parentFile ?: return false, displayName)
-        return file.renameTo(dest)
+        val parent = file.parentFile ?: return false
+        val dest = File(parent, displayName)
+        if (dest.exists()) dest.delete()
+        return if (file.renameTo(dest)) {
+            file = dest
+            true
+        } else {
+            false
+        }
     }
 
     fun listFiles(): Array<DocumentFile> {

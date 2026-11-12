@@ -75,7 +75,7 @@ fun RecommendationQueuePreview(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             userScrollEnabled = false
         ) {
-            itemsIndexed(recommendations.take(5), key = { _, song -> song.videoId }) { index, song ->
+            itemsIndexed(recommendations.take(5), key = { index, song -> "${song.videoId}_${index}" }) { index, song ->
                 QueuePreviewItem(
                     song = song,
                     position = index + 1,

@@ -22,6 +22,7 @@ import com.example.myplayer.data.repository.RecentHistoryRepository
 import com.example.myplayer.playback.MusicController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -201,14 +202,26 @@ class HomeViewModel @Inject constructor(
         // 1. Load initial Home recommendations & World Trending Hotlist in parallel
         viewModelScope.launch(Dispatchers.IO) {
             launch {
-                refreshAiRecommendations()
-                val topIds = _aiRecommendations.value.take(2).map { it.videoId }
-                if (topIds.isNotEmpty()) {
-                    innertubeApi.prefetchVisibleStreams(topIds)
+                try {
+                    refreshAiRecommendations()
+                    val topIds = _aiRecommendations.value.take(2).map { it.videoId }
+                    if (topIds.isNotEmpty()) {
+                        innertubeApi.prefetchVisibleStreams(topIds)
+                    }
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    Log.e("HomeViewModel", "Init AI recommendations failed", e)
+                    _isLoadingRecommendations.value = false
                 }
             }
             launch {
-                refreshTrendingMusic()
+                try {
+                    refreshTrendingMusic()
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    Log.e("HomeViewModel", "Init trending music failed", e)
+                    _isLoadingHotlist.value = false
+                }
             }
         }
 
@@ -295,16 +308,26 @@ class HomeViewModel @Inject constructor(
         // 5. Periodic auto-refresh every 15 minutes (not constantly)
         viewModelScope.launch(Dispatchers.IO) {
             while (isActive) {
-                delay(15 * 60 * 1000L)
-                refreshAiRecommendations()
+                try {
+                    delay(15 * 60 * 1000L)
+                    refreshAiRecommendations()
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    Log.e("HomeViewModel", "Periodic refresh failed", e)
+                }
             }
         }
     }
 
     fun syncSpotifyTasteAndRefresh() {
         viewModelScope.launch {
-            spotifyManager.syncSpotifyTasteIntoAi()
-            refreshAiRecommendations()
+            try {
+                spotifyManager.syncSpotifyTasteIntoAi()
+                refreshAiRecommendations()
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Log.e("HomeViewModel", "syncSpotifyTasteAndRefresh failed", e)
+            }
         }
     }
 
@@ -318,6 +341,9 @@ class HomeViewModel @Inject constructor(
                     // Prefetch top 2 Hotlist songs so tapping Play on Hotlist is 0ms instant!
                     innertubeApi.prefetchVisibleStreams(worldTrending.take(2).map { it.videoId })
                 }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Log.e("HomeViewModel", "Failed to refresh trending music", e)
             } finally {
                 _isLoadingHotlist.value = false
             }
@@ -331,6 +357,9 @@ class HomeViewModel @Inject constructor(
             if (list.isNotEmpty()) {
                 _aiRecommendations.value = list
             }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.e("HomeViewModel", "Failed to refresh AI recommendations", e)
         } finally {
             _isLoadingRecommendations.value = false
         }
@@ -346,6 +375,9 @@ class HomeViewModel @Inject constructor(
             try {
                 val results = aiModel.generateCategoryRecommendations(category, limit = 35)
                 _categoryRecommendations.value = _categoryRecommendations.value + (category to results)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Log.e("HomeViewModel", "Failed to select category $category", e)
             } finally {
                 _isLoadingRecommendations.value = false
             }

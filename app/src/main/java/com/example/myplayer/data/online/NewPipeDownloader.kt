@@ -28,19 +28,19 @@ class NewPipeDownloader(private val client: OkHttpClient) : Downloader() {
             "PATCH" -> builder.patch(request.dataToSend()?.toRequestBody() ?: "".toRequestBody())
         }
 
-        val okResponse = client.newCall(builder.build()).execute()
-        
-        val headers = mutableMapOf<String, List<String>>()
-        okResponse.headers.names().forEach { name ->
-            headers[name] = okResponse.headers.values(name)
-        }
+        return client.newCall(builder.build()).execute().use { okResponse ->
+            val headers = mutableMapOf<String, List<String>>()
+            okResponse.headers.names().forEach { name ->
+                headers[name] = okResponse.headers.values(name)
+            }
 
-        return Response(
-            okResponse.code,
-            okResponse.message,
-            headers,
-            okResponse.body?.string() ?: "",
-            request.url()
-        )
+            Response(
+                okResponse.code,
+                okResponse.message,
+                headers,
+                okResponse.body?.string() ?: "",
+                okResponse.request.url.toString()
+            )
+        }
     }
 }

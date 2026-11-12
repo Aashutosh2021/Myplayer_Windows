@@ -131,10 +131,10 @@ class InnertubeApi @Inject constructor(
                 .addHeader("Referer", "https://music.youtube.com/")
                 .build()
 
-            val response = okHttpClient.newCall(request).execute()
-            val body = response.body?.string() ?: return@withContext SearchPage(emptyList(), null)
-
-            parseSearchResponse(body)
+            okHttpClient.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: return@withContext SearchPage(emptyList(), null)
+                parseSearchResponse(body)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Search failed for '$query' (filtered=$filtered)", e)
             SearchPage(emptyList(), null)
@@ -205,21 +205,22 @@ class InnertubeApi @Inject constructor(
                 .url(oembedUrl)
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
                 .build()
-            val response = okHttpClient.newCall(request).execute()
-            if (response.isSuccessful) {
-                val json = response.body?.string()
-                if (!json.isNullOrBlank()) {
-                    val obj = JSONObject(json)
-                    val rawTitle = obj.optString("title", "").ifBlank { "YouTube Track" }
-                    val author = obj.optString("author_name", "").ifBlank { "YouTube" }
-                    val thumb = obj.optString("thumbnail_url", "").ifBlank { "https://img.youtube.com/vi/$cleanId/hqdefault.jpg" }
-                    return@withContext OnlineSong(
-                        videoId = cleanId,
-                        title = rawTitle,
-                        artist = author,
-                        thumbnailUrl = thumb,
-                        durationMs = 0L
-                    )
+            okHttpClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val json = response.body?.string()
+                    if (!json.isNullOrBlank()) {
+                        val obj = JSONObject(json)
+                        val rawTitle = obj.optString("title", "").ifBlank { "YouTube Track" }
+                        val author = obj.optString("author_name", "").ifBlank { "YouTube" }
+                        val thumb = obj.optString("thumbnail_url", "").ifBlank { "https://img.youtube.com/vi/$cleanId/hqdefault.jpg" }
+                        return@withContext OnlineSong(
+                            videoId = cleanId,
+                            title = rawTitle,
+                            artist = author,
+                            thumbnailUrl = thumb,
+                            durationMs = 0L
+                        )
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -299,14 +300,15 @@ class InnertubeApi @Inject constructor(
                 .addHeader("Referer", "https://music.youtube.com/")
                 .build()
 
-            val response = okHttpClient.newCall(request).execute()
-            if (!response.isSuccessful) {
-                Log.w(TAG, "Next endpoint HTTP error ${response.code} for $videoId")
-                return emptyList()
-            }
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "Next endpoint HTTP error ${response.code} for $videoId")
+                    return emptyList()
+                }
 
-            val body = response.body?.string() ?: return emptyList()
-            return parseNextResponse(body, excludeVideoId = excludeVideoId)
+                val body = response.body?.string() ?: return emptyList()
+                return parseNextResponse(body, excludeVideoId = excludeVideoId)
+            }
         } catch (e: Exception) {
             Log.w(TAG, "fetchNextEndpoint failed for $videoId (playlistId: $playlistId)", e)
             return emptyList()
@@ -703,6 +705,9 @@ class InnertubeApi @Inject constructor(
         }
 
         val winner = inFlightResolutions.putIfAbsent(videoId, deferred)
+        if (winner != null) {
+            deferred.cancel()
+        }
         val targetDeferred = winner ?: deferred
 
         try {

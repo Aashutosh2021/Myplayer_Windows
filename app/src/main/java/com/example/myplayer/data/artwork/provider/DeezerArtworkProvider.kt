@@ -83,60 +83,60 @@ class DeezerArtworkProvider @Inject constructor(
                 .get()
                 .build()
 
-            val response = httpClient.newCall(request).execute()
-
-            if (response.code == 429) {
-                Log.w(TAG, "Deezer returned HTTP 429 Too Many Requests. Activating backoff.")
-                backoffUntilMs.set(System.currentTimeMillis() + BACKOFF_DURATION_MS)
-                return null
-            }
-
-            if (!response.isSuccessful) return null
-
-            val body = response.body?.string() ?: return null
-            val root = JSONObject(body)
-
-            // Check API level error
-            val errorObj = root.optJSONObject("error")
-            if (errorObj != null) {
-                val errMsg = errorObj.optString("message", "")
-                if (errMsg.contains("limit", ignoreCase = true) || errMsg.contains("quota", ignoreCase = true)) {
+            httpClient.newCall(request).execute().use { response ->
+                if (response.code == 429) {
+                    Log.w(TAG, "Deezer returned HTTP 429 Too Many Requests. Activating backoff.")
                     backoffUntilMs.set(System.currentTimeMillis() + BACKOFF_DURATION_MS)
+                    return@use null
                 }
-                return null
+
+                if (!response.isSuccessful) return@use null
+
+                val body = response.body?.string() ?: return@use null
+                val root = JSONObject(body)
+
+                // Check API level error
+                val errorObj = root.optJSONObject("error")
+                if (errorObj != null) {
+                    val errMsg = errorObj.optString("message", "")
+                    if (errMsg.contains("limit", ignoreCase = true) || errMsg.contains("quota", ignoreCase = true)) {
+                        backoffUntilMs.set(System.currentTimeMillis() + BACKOFF_DURATION_MS)
+                    }
+                    return@use null
+                }
+
+                val dataArray = root.optJSONArray("data") ?: return@use null
+                if (dataArray.length() == 0) return@use null
+
+                for (i in 0 until dataArray.length()) {
+                    val item = dataArray.optJSONObject(i) ?: continue
+                    val candTitle = item.optString("title", "")
+                    val candArtist = item.optJSONObject("artist")?.optString("name", "") ?: ""
+
+                    if (!matcher.isValidMatch(targetTitle, targetArtist, candTitle, candArtist)) {
+                        continue
+                    }
+
+                    val albumObj = item.optJSONObject("album")
+                    val coverXl = albumObj?.optString("cover_xl", "")?.takeIf { it.isNotBlank() }
+                    val coverBig = albumObj?.optString("cover_big", "")?.takeIf { it.isNotBlank() }
+                    val coverMedium = albumObj?.optString("cover_medium", "")?.takeIf { it.isNotBlank() }
+
+                    val selectedUrl = coverXl ?: coverBig ?: coverMedium
+                    if (selectedUrl != null) {
+                        val width = if (selectedUrl == coverXl) 1000 else if (selectedUrl == coverBig) 500 else 250
+                        Log.d(TAG, "Deezer matched: '$candTitle' by '$candArtist' -> $selectedUrl")
+                        return ArtworkResult(
+                            url = selectedUrl,
+                            provider = name,
+                            width = width,
+                            height = width
+                        )
+                    }
+                }
+
+                null
             }
-
-            val dataArray = root.optJSONArray("data") ?: return null
-            if (dataArray.length() == 0) return null
-
-            for (i in 0 until dataArray.length()) {
-                val item = dataArray.optJSONObject(i) ?: continue
-                val candTitle = item.optString("title", "")
-                val candArtist = item.optJSONObject("artist")?.optString("name", "") ?: ""
-
-                if (!matcher.isValidMatch(targetTitle, targetArtist, candTitle, candArtist)) {
-                    continue
-                }
-
-                val albumObj = item.optJSONObject("album")
-                val coverXl = albumObj?.optString("cover_xl", "")?.takeIf { it.isNotBlank() }
-                val coverBig = albumObj?.optString("cover_big", "")?.takeIf { it.isNotBlank() }
-                val coverMedium = albumObj?.optString("cover_medium", "")?.takeIf { it.isNotBlank() }
-
-                val selectedUrl = coverXl ?: coverBig ?: coverMedium
-                if (selectedUrl != null) {
-                    val width = if (selectedUrl == coverXl) 1000 else if (selectedUrl == coverBig) 500 else 250
-                    Log.d(TAG, "Deezer matched: '$candTitle' by '$candArtist' -> $selectedUrl")
-                    return ArtworkResult(
-                        url = selectedUrl,
-                        provider = name,
-                        width = width,
-                        height = width
-                    )
-                }
-            }
-
-            null
         } catch (e: Exception) {
             Log.d(TAG, "Deezer query failed for '$query': ${e.message}")
             null

@@ -84,30 +84,13 @@ fun MiniPlayer(
     val repeatMode by mainViewModel.repeatMode.collectAsStateWithLifecycle()
 
     val effectiveDurationMs = remember(song.duration, liveDurationMs) {
-        when {
-            liveDurationMs > 0L -> liveDurationMs
-            song.duration > 0L -> song.duration
-            else -> 1L
-        }
+        liveDurationMs.takeIf { it > 0L } ?: song.duration.takeIf { it > 0L } ?: 1L
     }
     val progress = (livePositionMs.toFloat() / effectiveDurationMs.toFloat()).coerceIn(0f, 1f)
-    val context = androidx.compose.ui.platform.LocalContext.current
 
-    // Firebase Remote Notifications auto-polling & runtime permission request
-    LaunchedEffect(Unit) {
-        com.example.myplayer.ui.myplayer.MyPlayerRemoteNotificationManager.startAutoPolling(context)
-    }
-
-    // Funny mood / vibe-check streak tracker + its popup
-    LaunchedEffect(song.title, song.artist, song.album, livePositionMs, isPlaying) {
+    // Funny mood / vibe-check streak tracker
+    LaunchedEffect(song.title, song.artist, song.album, isPlaying) {
         com.example.myplayer.ui.myplayer.MyPlayerVibeCheckManager.onPlaybackTick(song.title, song.artist, song.album, isPlaying)
-    }
-    com.example.myplayer.ui.myplayer.MyPlayerVibeCheckManager.activePopup?.let { event ->
-        com.example.myplayer.ui.myplayer.MyPlayerVibeCheckPopupDialog(
-            event = event,
-            onDismiss = { com.example.myplayer.ui.myplayer.MyPlayerVibeCheckManager.dismissPopup() },
-            onSwitchVibeClick = onNextClick
-        )
     }
 
     var swipeOffsetX by remember { mutableFloatStateOf(0f) }

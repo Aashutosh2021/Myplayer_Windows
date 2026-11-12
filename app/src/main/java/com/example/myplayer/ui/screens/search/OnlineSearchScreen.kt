@@ -392,7 +392,7 @@ fun SearchHistorySection(
                 }
             }
 
-            items(playedHistory.size, key = { i -> "history_${playedHistory[i].id}" }) { i ->
+            items(playedHistory.size, key = { i -> "history_${playedHistory[i].id}_${i}" }) { i ->
                 val song = playedHistory[i]
                 Row(
                     modifier = Modifier
@@ -539,7 +539,7 @@ fun SearchHistorySection(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            items(searches.size, key = { i -> "search_${searches[i].query}" }) { i ->
+            items(searches.size, key = { i -> "search_${searches[i].query}_${i}" }) { i ->
                 val s = searches[i]
                 Row(
                     modifier = Modifier
@@ -687,7 +687,7 @@ fun OnlineResultsList(
             }
         }
 
-        items(results.itemCount, key = results.itemKey { it.videoId }) { index ->
+        items(results.itemCount, key = { index -> "${results[index]?.videoId ?: index}_${index}" }) { index ->
             val song = results[index] ?: return@items
             val isDownloaded = song.videoId in downloadedIds
             val isStreaming = isLoadingStream == song.videoId

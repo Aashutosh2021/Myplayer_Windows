@@ -341,7 +341,7 @@ class OnDeviceMusicAiModel @Inject constructor(
         fun registerCandidate(song: OnlineSong, graphBonus: Float) {
             if (song.videoId.isBlank()) return
             candidatePool.putIfAbsent(song.videoId, song)
-            graphBonusMap[song.videoId] = (graphBonusMap[song.videoId] ?: 0f) + graphBonus
+            graphBonusMap.merge(song.videoId, graphBonus, Float::plus)
         }
 
         coroutineScope {
@@ -607,7 +607,7 @@ class OnDeviceMusicAiModel @Inject constructor(
             if (song.videoId.isBlank()) return
             candidatePool.putIfAbsent(song.videoId, song)
             // If a song appears in multiple trending charts, its viral score stacks!
-            trendingBonusMap[song.videoId] = (trendingBonusMap[song.videoId] ?: 0f) + chartBonus
+            trendingBonusMap.merge(song.videoId, chartBonus, Float::plus)
         }
 
         coroutineScope {
@@ -679,7 +679,7 @@ class OnDeviceMusicAiModel @Inject constructor(
      */
     fun embedSong(title: String, artist: String, durationMs: Long = 0L): FloatArray {
         val vec = FloatArray(DIM)
-        val cleanTitle = title.lowercase().replace(Regex("[^a-z0-9\\s]"), " ")
+        val cleanTitle = title.lowercase().replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
         val cleanArtist = artist.lowercase().replace(Regex("(?i)-\\s*topic"), "").trim()
 
         projectFeatures(vec, extractNGrams(cleanArtist, 3, 4), weight = 2.8f)
@@ -697,6 +697,7 @@ class OnDeviceMusicAiModel @Inject constructor(
         return l2Normalize(vec)
     }
 
+    @Synchronized
     fun predictAffinityScore(candidate: OnlineSong): Float {
         val candVec = embedSong(candidate.title, candidate.artist, candidate.durationMs)
         val slot = currentTimeSlot()
@@ -795,7 +796,7 @@ class OnDeviceMusicAiModel @Inject constructor(
             .sortedByDescending { it.timestamp }
             .take(MAX_HISTORY_ENTRIES)
             .joinToString("\n") {
-                "${it.videoId}\t${it.title.replace("\t", " ")}\t${it.artist.replace("\t", " ")}\t${it.durationMs}\t${"%.2f".format(Locale.US, it.score)}\t${it.timestamp}"
+                "${it.videoId}\t${it.title.replace(Regex("[\\t\\r\\n]"), " ")}\t${it.artist.replace(Regex("[\\t\\r\\n]"), " ")}\t${it.durationMs}\t${"%.2f".format(Locale.US, it.score)}\t${it.timestamp}"
             }
         prefs.edit().putString("pattern_entries", capped).apply()
     }

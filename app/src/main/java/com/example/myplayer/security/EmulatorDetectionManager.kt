@@ -55,7 +55,7 @@ class EmulatorDetectionManager @Inject constructor(
 
         // Known emulator manufacturers and hardware identifiers
         private val EMULATOR_MANUFACTURERS = arrayOf(
-            "Genymotion", "unknown", "Google", "Andy", "MIT", "nox", "TiantianVM"
+            "Genymotion", "unknown", "Andy", "MIT", "nox", "TiantianVM"
         )
         private val EMULATOR_MODELS = arrayOf(
             "sdk", "Emulator", "Android SDK built for x86",
@@ -64,7 +64,7 @@ class EmulatorDetectionManager @Inject constructor(
         )
         private val EMULATOR_HARDWARE = arrayOf(
             "goldfish", "ranchu", "vbox86", "nox", "ttVM_hdragon",
-            "droid4x", "andy", "x86"
+            "droid4x", "andy"
         )
         private val EMULATOR_PRODUCTS = arrayOf(
             "sdk_google_phone_x86", "sdk_x86", "vbox86p", "emulator_arm",
@@ -112,6 +112,10 @@ class EmulatorDetectionManager @Inject constructor(
      * Threshold of 0.4 or more is treated as a detected emulator.
      */
     fun check(): EmulatorCheckResult {
+        val osName = System.getProperty("os.name").orEmpty()
+        if (osName.contains("Windows", ignoreCase = true) || osName.contains("Mac", ignoreCase = true)) {
+            return EmulatorCheckResult(false, 0f, emptyList())
+        }
         val reasons = mutableListOf<String>()
         var score = 0f
 
@@ -168,7 +172,6 @@ class EmulatorDetectionManager @Inject constructor(
             val networkOperator = tm.networkOperatorName
             // Emulators often report "Android" as the network operator
             networkOperator.equals("Android", ignoreCase = true)
-                || networkOperator.isBlank()
         } catch (e: Exception) { false }
     }
 

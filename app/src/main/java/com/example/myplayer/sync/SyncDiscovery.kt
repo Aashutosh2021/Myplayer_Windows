@@ -175,24 +175,27 @@ class SyncDiscovery @Inject constructor(
         }
     }
 
+    @Synchronized
     private fun acquireMulticastLock() {
-        if (multicastLock?.isHeld == true) return
         try {
-            multicastLock = wifiManager.createMulticastLock("myplayer_sync_mdns").apply {
+            val lock = multicastLock ?: wifiManager.createMulticastLock("myplayer_sync_mdns").apply {
                 setReferenceCounted(true)
-                acquire()
-            }
+            }.also { multicastLock = it }
+            lock.acquire()
         } catch (e: Exception) {
             Log.w(TAG, "Could not acquire multicast lock (missing CHANGE_WIFI_MULTICAST_STATE?)", e)
         }
     }
 
+    @Synchronized
     private fun releaseMulticastLock() {
         try {
-            multicastLock?.let { if (it.isHeld) it.release() }
+            multicastLock?.let {
+                if (it.isHeld) it.release()
+                if (!it.isHeld) multicastLock = null
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Could not release multicast lock", e)
         }
-        multicastLock = null
     }
 }

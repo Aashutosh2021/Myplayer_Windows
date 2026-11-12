@@ -163,7 +163,7 @@ class PlaybackErrorHandler internal constructor(
                             Log.i("PlaybackErrorHandler", "Auto-retry: Attempting PlaybackRouter resolution after 2s delay (videoId=$videoId)")
                             val success = if (!videoId.isNullOrBlank()) {
                                 val freshUrl = router.resolveFreshStreamUrl(videoId)
-                                !freshUrl.isNullOrBlank() || router.retryCurrentTrack()
+                                if (!freshUrl.isNullOrBlank()) router.retryCurrentTrack() else false
                             } else {
                                 router.retryCurrentTrack()
                             }

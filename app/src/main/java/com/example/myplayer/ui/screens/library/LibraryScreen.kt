@@ -555,7 +555,7 @@ fun HybridSongsTab(
         }
 
         // ── Numbered Track List (01, 02, 03... like Image 2 Right Screen) ────────
-        itemsIndexed(songs, key = { _, song -> song.id }) { index, song ->
+        itemsIndexed(songs, key = { index, song -> "${song.id}_${index}" }) { index, song ->
             HybridSongItem(
                 index = index,
                 song = song,

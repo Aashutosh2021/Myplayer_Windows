@@ -108,14 +108,14 @@ class DownloadWorker @AssistedInject constructor(
             val hasCustomFolder = !customFolderUriString.isNullOrEmpty()
 
             val safeTitle = title
-                .replace(Regex("[^a-zA-Z0-9 _\\-]"), "")
+                .replace(Regex("[\\\\/:*?\"<>|\\r\\n\\t]"), "_")
                 .replace(Regex(" {2,}"), " ")   // collapse double-spaces left by stripped chars like '|'
                 .trim()
                 .take(60)
                 .ifBlank { videoId }
 
-            val finalFileName = "$safeTitle.m4a"
-            val tmpFileName = "$safeTitle.tmp"
+            val finalFileName = "$safeTitle [$videoId].m4a"
+            val tmpFileName = "$safeTitle [$videoId].tmp"
 
             // Skip if already downloaded
             if (downloadedSongDao.existsById(videoId)) {

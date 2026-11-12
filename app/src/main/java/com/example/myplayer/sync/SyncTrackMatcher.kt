@@ -104,7 +104,8 @@ class SyncTrackMatcher @Inject constructor(
         val allDownloads = downloadedSongDao.getAllDownloadsSync()
         val downloadMetadataMatch = allDownloads.firstOrNull { d ->
             d.title.equals(ref.title, ignoreCase = true) &&
-            d.artist.equals(ref.artist, ignoreCase = true)
+            d.artist.equals(ref.artist, ignoreCase = true) &&
+            abs(d.durationMs - ref.durationMs) <= DURATION_TOLERANCE_MS
         }
         if (downloadMetadataMatch != null && verifyLocalFile(downloadMetadataMatch.localPath)) {
             val art = downloadMetadataMatch.thumbnailUrl.ifBlank { defaultArt }

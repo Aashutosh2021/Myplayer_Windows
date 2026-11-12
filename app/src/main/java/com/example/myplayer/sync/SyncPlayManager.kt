@@ -47,7 +47,7 @@ class SyncPlayManager @Inject constructor(
 
     private val deviceId: String = UUID.randomUUID().toString()
     private var sessionId: String = ""
-    private var sequenceCounter = 0L
+    private val sequenceCounter = java.util.concurrent.atomic.AtomicLong(0L)
 
     private var transport: SyncTransport? = null
     private var transportJob: Job? = null
@@ -66,7 +66,7 @@ class SyncPlayManager @Inject constructor(
     private val _uiState = MutableStateFlow(SyncUiState(isEmulator = isEmulator()))
     val uiState: StateFlow<SyncUiState> = _uiState.asStateFlow()
 
-    private fun nextSeq() = sequenceCounter++
+    private fun nextSeq() = sequenceCounter.getAndIncrement()
 
     private fun updateState(transform: (SyncUiState) -> SyncUiState) {
         _uiState.value = transform(_uiState.value)
@@ -313,9 +313,12 @@ class SyncPlayManager @Inject constructor(
             return
         }
 
-        val allSlavesReady = slaves.all { it.status == DeviceSyncStatus.READY }
-        if (allSlavesReady) {
-            Log.i(TAG, "Master barrier satisfied: all ${slaves.size} slave(s) are READY. Scheduling PLAY_AT.")
+        val allSlavesFinished = slaves.all {
+            it.status == DeviceSyncStatus.READY || it.status == DeviceSyncStatus.FAILED
+        }
+        val anySlaveReady = slaves.any { it.status == DeviceSyncStatus.READY }
+        if (allSlavesFinished && (anySlaveReady || slaves.isEmpty())) {
+            Log.i(TAG, "Master barrier satisfied: ready slave(s) prepared. Scheduling PLAY_AT.")
             scheduleSynchronizedStart()
         } else {
             val readyCount = slaves.count { it.status == DeviceSyncStatus.READY }
@@ -590,6 +593,7 @@ class SyncPlayManager @Inject constructor(
                     updateState { it.copy(devices = connectedDevices.values.toList()) }
                 }
                 Log.e(TAG, "SYNC FAILURE:\ndevice=${message.senderId}\nreason=${message.reason}")
+                checkMasterBarrierAndStart()
             }
 
             is SyncMessage.Ready -> {
@@ -603,7 +607,22 @@ class SyncPlayManager @Inject constructor(
                         updateState { it.copy(devices = connectedDevices.values.toList()) }
                     }
                     Log.i(TAG, "SYNC READY:\ndevice=${message.senderId}")
-                    checkMasterBarrierAndStart()
+                    if (isPlaybackScheduled && (_uiState.value.playbackState == SyncPlaybackState.PLAYING || musicController.isPlaying.value)) {
+                        val leadMs = PLAY_AT_LEAD_MS
+                        val targetPos = musicController.getCurrentPosition() + leadMs
+                        sendMessage(
+                            SyncMessage.PlayAt(
+                                sessionId = sessionId,
+                                senderId = deviceId,
+                                sequence = nextSeq(),
+                                timestamp = System.currentTimeMillis(),
+                                startDelayMs = leadMs,
+                                positionMs = targetPos
+                            )
+                        )
+                    } else {
+                        checkMasterBarrierAndStart()
+                    }
                 } else {
                     if (dev != null) {
                         connectedDevices[message.senderId] = dev.copy(
@@ -613,6 +632,7 @@ class SyncPlayManager @Inject constructor(
                         updateState { it.copy(devices = connectedDevices.values.toList()) }
                     }
                     Log.w(TAG, "SYNC FAILURE:\ndevice=${message.senderId}\nreason=Track unavailable")
+                    checkMasterBarrierAndStart()
                 }
             }
 
@@ -898,6 +918,8 @@ class SyncPlayManager @Inject constructor(
                 delay(300)
             }
             null
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Error in downloadMissingTrack", e)
             null
@@ -926,6 +948,8 @@ class SyncPlayManager @Inject constructor(
             } else {
                 null
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Error preparing streaming fallback", e)
             null
@@ -1052,7 +1076,7 @@ class SyncPlayManager @Inject constructor(
         pendingStartPositionMs = 0L
         isMasterPrepared = false
         isPlaybackScheduled = false
-        sequenceCounter = 0L
+        sequenceCounter.set(0L)
         sessionId = ""
         val isEmu = isEmulator()
         updateState { SyncUiState(isEmulator = isEmu) }

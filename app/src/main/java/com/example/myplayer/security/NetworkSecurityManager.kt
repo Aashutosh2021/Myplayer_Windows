@@ -71,7 +71,7 @@ class NetworkSecurityManager @Inject constructor() {
         // !! IMPORTANT: Replace these with pins you have verified yourself !!
         // The pins below are well-known public pins for Google services (2025).
         private const val GOOGLE_GTS_ROOT_R1 = "sha256/++MBgDH5WGvL9Bcn5Be30cRcL0f5O+NyoXuWtQdX1aI="
-        private const val GOOGLE_GTS_ROOT_R2 = "sha256/test+MBgDH5WGvL9Bcn5Be30cRcL0f5O+NyoXuWtQdX1aI=" // Backup
+        private const val GOOGLE_GTS_ROOT_R2 = "sha256/mEflZT5enoR1FuXLgYYGqnVEoZvmf9c2bVBpiOjYQ0c=" // Backup
         private const val ISRG_ROOT_X1       = "sha256/C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M="
     }
 

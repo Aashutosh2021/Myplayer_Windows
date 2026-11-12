@@ -44,22 +44,23 @@ class LastFmChartSource @Inject constructor(
                 .addHeader("User-Agent", "MyPlayer/3.3 (Android)")
                 .build()
 
-            val response = okHttpClient.newCall(request).execute()
-            if (!response.isSuccessful) {
-                Log.w(TAG, "Last.fm HTTP error ${response.code}: falling back to stale cache")
-                return@withContext cache.getStale(CACHE_KEY_GLOBAL) ?: emptyList()
-            }
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "Last.fm HTTP error ${response.code}: falling back to stale cache")
+                    return@withContext cache.getStale(CACHE_KEY_GLOBAL) ?: emptyList()
+                }
 
-            val body = response.body?.string() ?: return@withContext cache.getStale(CACHE_KEY_GLOBAL) ?: emptyList()
-            val parsedTracks = parseChartTracks(body)
+                val body = response.body?.string() ?: return@withContext cache.getStale(CACHE_KEY_GLOBAL) ?: emptyList()
+                val parsedTracks = parseChartTracks(body)
 
-            if (parsedTracks.isNotEmpty()) {
-                cache.put(CACHE_KEY_GLOBAL, parsedTracks)
-                Log.d(TAG, "LASTFM_REQUEST_SUCCESS: Fetched and cached ${parsedTracks.size} tracks")
-                return@withContext parsedTracks
-            } else {
-                Log.w(TAG, "Last.fm response contained 0 valid tracks, attempting stale cache")
-                return@withContext cache.getStale(CACHE_KEY_GLOBAL) ?: emptyList()
+                if (parsedTracks.isNotEmpty()) {
+                    cache.put(CACHE_KEY_GLOBAL, parsedTracks)
+                    Log.d(TAG, "LASTFM_REQUEST_SUCCESS: Fetched and cached ${parsedTracks.size} tracks")
+                    return@withContext parsedTracks
+                } else {
+                    Log.w(TAG, "Last.fm response contained 0 valid tracks, attempting stale cache")
+                    return@withContext cache.getStale(CACHE_KEY_GLOBAL) ?: emptyList()
+                }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Last.fm request failed: ${e.message}. Using stale cache fallback if available.", e)

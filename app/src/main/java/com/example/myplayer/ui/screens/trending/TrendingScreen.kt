@@ -280,7 +280,7 @@ fun TrendingScreen(
                 // ── Numbered Track List Items (01, 02, 03...) ─────────────────
                 itemsIndexed(
                     items = recommendations,
-                    key = { _, song -> song.videoId },
+                    key = { index, song -> "${song.videoId}_${index}" },
                     contentType = { _, _ -> "trending_song" }
                 ) { index, song ->
                     Row(

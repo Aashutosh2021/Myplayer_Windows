@@ -91,7 +91,6 @@ class RedownloadQueueWorker @AssistedInject constructor(
 
             val current = todo.first()
             val remaining = todo.drop(1)
-            writeQueue(context, remaining)
 
             try {
                 val streamUrl = innertubeApi.getStreamUrl(current.videoId)
@@ -107,20 +106,22 @@ class RedownloadQueueWorker @AssistedInject constructor(
                         )
                     )
                     if (started) {
+                        writeQueue(context, remaining)
                         // Wait until DownloadRepository completes this song (up to 5 minutes)
                         var waitedMs = 0L
                         while (downloadRepository.isDownloading(current.videoId) && waitedMs < 300_000L) {
                             delay(500L)
                             waitedMs += 500L
                         }
+                        Log.i(TAG, "Redownloaded '${current.title}' — ${remaining.size} left in queue")
+                        return remaining.isNotEmpty()
                     }
-                    Log.i(TAG, "Redownloaded '${current.title}' — ${remaining.size} left in queue")
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Redownload failed for '${current.title}' — continuing with next", e)
             }
 
-            return remaining.isNotEmpty()
+            return true
         }
 
         private fun startDesktopQueueLoop(context: Context) {

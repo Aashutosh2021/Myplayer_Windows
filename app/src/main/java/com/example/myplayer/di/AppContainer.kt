@@ -25,8 +25,8 @@ import java.lang.reflect.ParameterizedType
 import java.lang.reflect.Type
 
 object AppContainer {
-    val viewModels = mutableMapOf<Class<*>, ViewModel>()
-    private val singletons = mutableMapOf<Class<*>, Any>()
+    val viewModels = java.util.concurrent.ConcurrentHashMap<Class<*>, ViewModel>()
+    private val singletons = java.util.concurrent.ConcurrentHashMap<Class<*>, Any>()
     private val scope = CoroutineScope(Dispatchers.IO)
 
     @Volatile private var masterAudioState = com.example.myplayer.data.preferences.AudioPlaybackState()

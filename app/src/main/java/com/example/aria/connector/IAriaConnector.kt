@@ -18,7 +18,7 @@ interface IAriaConnector : IInterface {
 
         companion object {
             @JvmStatic
-            fun asInterface(obj: IBinder?): IAriaConnector? = null
+            fun asInterface(obj: IBinder?): IAriaConnector? = obj as? IAriaConnector
         }
     }
 }

@@ -31,17 +31,17 @@ import kotlin.math.sin
 import kotlin.math.tanh
 
 object DesktopAudioBackend {
-    private var mediaPlayer: MediaPlayer? = null
-    private var mediaPlayerFactory: MediaPlayerFactory? = null
-    var isVlcAvailable: Boolean = false
+    @Volatile private var mediaPlayer: MediaPlayer? = null
+    @Volatile private var mediaPlayerFactory: MediaPlayerFactory? = null
+    @Volatile var isVlcAvailable: Boolean = false
         private set
 
     private const val CALLBACK_RATE = 48000
     private const val CALLBACK_CHANNELS = 2
     private const val BYTES_PER_SAMPLE = 2
     private const val BLOCK_ALIGN = CALLBACK_CHANNELS * BYTES_PER_SAMPLE
-    private var soundLine: SourceDataLine? = null
-    private var currentRate: Float = 1f
+    @Volatile private var soundLine: SourceDataLine? = null
+    @Volatile private var currentRate: Float = 1f
 
     // Separate user volume slider (0..1) from crossfade/pause-fade envelope (0..1)
     @Volatile private var userTargetVolume: Float = 1f
@@ -52,8 +52,8 @@ object DesktopAudioBackend {
     private var pauseFadeJob: Job? = null
 
     // Secondary Deck for True Apple-Style Overlapping Crossfade
-    private var outgoingMediaPlayer: MediaPlayer? = null
-    private var outgoingSoundLine: SourceDataLine? = null
+    @Volatile private var outgoingMediaPlayer: MediaPlayer? = null
+    @Volatile private var outgoingSoundLine: SourceDataLine? = null
     @Volatile private var outgoingEnvelope: Float = 0f
     private var outgoingFadeJob: Job? = null
     private var manualCrossfadeRampInJob: Job? = null
@@ -70,9 +70,9 @@ object DesktopAudioBackend {
 
     private var onCompletionCallback: (() -> Unit)? = null
     private var onPlayingChangedCallback: ((Boolean) -> Unit)? = null
-    var currentPath: String? = null
+    @Volatile var currentPath: String? = null
         private set
-    var isPaused: Boolean = false
+    @Volatile var isPaused: Boolean = false
         private set
     private var simulatedStartTime: Long = 0L
     private var simulatedPauseTime: Long = 0L

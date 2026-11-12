@@ -16,7 +16,6 @@ interface CachedLyricsDao {
         SELECT * FROM cached_lyrics 
         WHERE songId = :songId 
            OR (LOWER(TRIM(trackName)) = LOWER(TRIM(:trackName)) AND LOWER(TRIM(artistName)) = LOWER(TRIM(:artistName)))
-           OR (LOWER(TRIM(trackName)) = LOWER(TRIM(:trackName)) AND :trackName != '')
         ORDER BY 
             CASE 
                 WHEN songId = :songId THEN 0 

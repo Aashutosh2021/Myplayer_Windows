@@ -68,7 +68,7 @@ class LyricsViewModel @Inject constructor(
         try {
             val out = scriptConverter.convert(lines, from, mode)
             return if (synced.isNotEmpty()) {
-                raw.copy(syncedLines = synced.mapIndexed { i, (t, _) -> t to out[i] })
+                raw.copy(syncedLines = synced.mapIndexed { i, (t, _) -> t to (out.getOrNull(i) ?: "") })
             } else {
                 raw.copy(result = raw.result.copy(plainLyrics = out.joinToString("\n")))
             }

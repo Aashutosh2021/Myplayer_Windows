@@ -154,7 +154,14 @@ class ArtworkMatcher @Inject constructor() {
         val cTitle = cleanTitle(title, cArtist).lowercase()
         val rawKey = "${cArtist}_${cTitle}"
         val sanitized = rawKey.replace(Regex("""[^a-z0-9]+"""), "_").trim('_')
-        return sanitized.ifBlank { "unknown_artwork" }
+        if (sanitized.isBlank()) {
+            val combined = "${title.trim().lowercase()}_${artist.trim().lowercase()}"
+            val md = java.security.MessageDigest.getInstance("MD5")
+            val digest = md.digest(combined.toByteArray(Charsets.UTF_8))
+            val hash = digest.joinToString("") { "%02x".format(it) }
+            return "art_$hash"
+        }
+        return sanitized
     }
 
     private fun normalizedSimilarity(s1: String, s2: String): Double {

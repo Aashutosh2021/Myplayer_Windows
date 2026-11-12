@@ -71,26 +71,32 @@ fun SpotifyLoginDialog(
         loginError = null
         statusText = loadingMessage
         scope.launch {
-            spotifyManager.completeLoginWithCookies(spDc, spKey)
-                .onSuccess { username ->
-                    Toast.makeText(
-                        context,
-                        "Spotify Connected ($username)! Syncing library in background...",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    onLoginSuccess(username)
-                    onDismiss()
-                }
-                .onFailure { err ->
-                    statusText = null
-                    loginError = err.message ?: "Unknown login error"
-                    Toast.makeText(
-                        context,
-                        "Login error: ${err.message ?: "Unknown"}",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    tokenFetchStarted.set(false)
-                }
+            try {
+                spotifyManager.completeLoginWithCookies(spDc, spKey)
+                    .onSuccess { username ->
+                        Toast.makeText(
+                            context,
+                            "Spotify Connected ($username)! Syncing library in background...",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        onLoginSuccess(username)
+                        onDismiss()
+                    }
+                    .onFailure { err ->
+                        statusText = null
+                        loginError = err.message ?: "Unknown login error"
+                        Toast.makeText(
+                            context,
+                            "Login error: ${err.message ?: "Unknown"}",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+            } catch (e: Exception) {
+                statusText = null
+                loginError = e.message ?: "Unknown login error"
+            } finally {
+                tokenFetchStarted.set(false)
+            }
         }
     }
 

@@ -101,7 +101,9 @@ class AriaService : MusicConnectorService() {
 
         // Restore playback state asynchronously (Task 9: State Recovery)
         serviceScope.launch {
-            stateRecoveryManager.restoreState(musicController)
+            if (musicController.currentSong.value == null && musicController.getSongQueue().isEmpty()) {
+                stateRecoveryManager.restoreState(musicController)
+            }
             startStateObservers()
         }
     }
@@ -129,11 +131,13 @@ class AriaService : MusicConnectorService() {
 
         // 2. Observe playing state changes for song paused notifications
         serviceScope.launch {
+            var wasPlaying = musicController.isPlaying.value
             musicController.isPlaying
                 .collect { isPlaying ->
-                    if (!isPlaying) {
+                    if (wasPlaying && !isPlaying) {
                         notifyPlaybackPaused()
                     }
+                    wasPlaying = isPlaying
                 }
         }
 
@@ -292,7 +296,11 @@ class AriaService : MusicConnectorService() {
     }
 
     override suspend fun onDownload(trackId: String): AppResponse = withContext(Dispatchers.Main) {
-        downloadProvider.downloadSong(trackId, "", "", AriaCommand.DOWNLOAD_SONG.ordinal, null).toAppResponse()
+        val resolvedSong = musicController.currentSong.value?.takeIf { it.id == trackId }
+            ?: musicRepository.getSongById(trackId)
+        val title = resolvedSong?.title?.takeIf { !it.isBlank() && it != "Unknown" } ?: ""
+        val artist = resolvedSong?.artist?.takeIf { !it.isBlank() && it != "Unknown" } ?: ""
+        downloadProvider.downloadSong(trackId, title, artist, AriaCommand.DOWNLOAD_SONG.ordinal, null).toAppResponse()
     }
 
     override suspend fun onGetLyrics(): AppResponse = withContext(Dispatchers.Main) {

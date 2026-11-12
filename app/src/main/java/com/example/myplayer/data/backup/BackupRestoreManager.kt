@@ -149,7 +149,7 @@ class BackupRestoreManager @Inject constructor(
             }
         }
 
-        // 3. Gather all playlist songs & ensure every playlist song is backed up with metadata
+        // 3. Gather all playlist songs, favorites, and recent history & ensure every song is backed up with metadata
         val playlistSongsRaw = db.playlistDao().getAllPlaylistSongsSync()
         playlistSongsRaw.forEach { ps ->
             if (!songsMap.containsKey(ps.songId)) {
@@ -179,6 +179,74 @@ class BackupRestoreManager @Inject constructor(
                         dateAdded = System.currentTimeMillis(),
                         playCount = 0,
                         videoId = ps.songId
+                    )
+                }
+            }
+        }
+
+        val favoritesRaw = db.favoriteDao().getAllFavoritesSync()
+        favoritesRaw.forEach { fav ->
+            if (!songsMap.containsKey(fav.songId)) {
+                val matchingDl = allDownloads.firstOrNull { it.id == fav.songId }
+                if (matchingDl != null) {
+                    songsMap[fav.songId] = SongEntity(
+                        id = matchingDl.id,
+                        title = matchingDl.title,
+                        artist = matchingDl.artist,
+                        album = matchingDl.album.ifBlank { "Downloads" },
+                        duration = matchingDl.durationMs,
+                        path = matchingDl.localPath,
+                        albumArt = matchingDl.thumbnailUrl,
+                        dateAdded = matchingDl.downloadedAt,
+                        playCount = 0,
+                        videoId = matchingDl.id
+                    )
+                } else {
+                    songsMap[fav.songId] = SongEntity(
+                        id = fav.songId,
+                        title = "Favorite Track",
+                        artist = "Unknown Artist",
+                        album = "Favorites",
+                        duration = 0L,
+                        path = "online://${fav.songId}",
+                        albumArt = null,
+                        dateAdded = System.currentTimeMillis(),
+                        playCount = 0,
+                        videoId = fav.songId
+                    )
+                }
+            }
+        }
+
+        val historyRaw = db.recentHistoryDao().getAllRecentHistorySync()
+        historyRaw.forEach { hist ->
+            if (!songsMap.containsKey(hist.songId)) {
+                val matchingDl = allDownloads.firstOrNull { it.id == hist.songId }
+                if (matchingDl != null) {
+                    songsMap[hist.songId] = SongEntity(
+                        id = matchingDl.id,
+                        title = matchingDl.title,
+                        artist = matchingDl.artist,
+                        album = matchingDl.album.ifBlank { "Downloads" },
+                        duration = matchingDl.durationMs,
+                        path = matchingDl.localPath,
+                        albumArt = matchingDl.thumbnailUrl,
+                        dateAdded = matchingDl.downloadedAt,
+                        playCount = 0,
+                        videoId = matchingDl.id
+                    )
+                } else {
+                    songsMap[hist.songId] = SongEntity(
+                        id = hist.songId,
+                        title = "Recent Track",
+                        artist = "Unknown Artist",
+                        album = "History",
+                        duration = 0L,
+                        path = "online://${hist.songId}",
+                        albumArt = null,
+                        dateAdded = System.currentTimeMillis(),
+                        playCount = 0,
+                        videoId = hist.songId
                     )
                 }
             }

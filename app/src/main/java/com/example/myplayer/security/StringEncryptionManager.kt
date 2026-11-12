@@ -4,10 +4,12 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import java.security.KeyStore
+import java.util.concurrent.ConcurrentHashMap
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -99,7 +101,8 @@ class StringEncryptionManager @Inject constructor() {
     }
 
     // In-memory cache — values are wiped if the app process is killed
-    private val cache = HashMap<String, String>(8)
+    private val cache = ConcurrentHashMap<String, String>(8)
+    @Volatile private var fallbackKey: SecretKey? = null
 
     // ─── Public API ──────────────────────────────────────────────────────────
 
@@ -165,22 +168,32 @@ class StringEncryptionManager @Inject constructor() {
     }
 
     private fun getOrCreateKey(): SecretKey {
-        val keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }
-        if (keyStore.containsAlias(KEY_ALIAS)) {
-            return (keyStore.getEntry(KEY_ALIAS, null) as KeyStore.SecretKeyEntry).secretKey
-        }
-        val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE_PROVIDER)
-        keyGenerator.init(
-            KeyGenParameterSpec.Builder(
-                KEY_ALIAS,
-                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+        return try {
+            val keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }
+            if (keyStore.containsAlias(KEY_ALIAS)) {
+                return (keyStore.getEntry(KEY_ALIAS, null) as KeyStore.SecretKeyEntry).secretKey
+            }
+            val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE_PROVIDER)
+            keyGenerator.init(
+                KeyGenParameterSpec.Builder(
+                    KEY_ALIAS,
+                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+                )
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setKeySize(256)
+                    .setUserAuthenticationRequired(false) // No biometric gate — app must always start
+                    .build()
             )
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(256)
-                .setUserAuthenticationRequired(false) // No biometric gate — app must always start
-                .build()
-        )
-        return keyGenerator.generateKey()
+            keyGenerator.generateKey()
+        } catch (_: Exception) {
+            fallbackKey ?: synchronized(this) {
+                fallbackKey ?: run {
+                    val keyBytes = java.security.MessageDigest.getInstance("SHA-256")
+                        .digest("$KEY_ALIAS:${System.getProperty("user.name", "myplayer")}".toByteArray(Charsets.UTF_8))
+                    SecretKeySpec(keyBytes, "AES").also { fallbackKey = it }
+                }
+            }
+        }
     }
 }

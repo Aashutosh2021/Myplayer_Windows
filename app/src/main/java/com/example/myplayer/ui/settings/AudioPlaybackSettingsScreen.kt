@@ -131,7 +131,7 @@ fun AudioPlaybackSettingsSection(
                 if (config.trueDolbySpatial) {
                     Text("Spatial Soundstage Width: ${(config.spatialWidth * 100).toInt()}%", color = AccentNeonLime, style = MaterialTheme.typography.bodySmall)
                     Slider(
-                        value = config.spatialWidth,
+                        value = config.spatialWidth.let { if (it.isNaN() || it.isInfinite()) 0.1f else it.coerceIn(0.1f, 1.0f) },
                         onValueChange = { onDolbyToggle(true, it) },
                         valueRange = 0.1f..1.0f,
                         colors = SliderDefaults.colors(thumbColor = AccentNeonLime, activeTrackColor = AccentNeonLime)

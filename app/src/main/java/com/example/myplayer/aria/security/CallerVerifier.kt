@@ -21,6 +21,8 @@ class CallerVerifier @Inject constructor(
         private const val TAG = "CallerVerifier"
     }
 
+    fun hasAdminPermission(): Boolean = isCallerTrusted()
+
     /**
      * Checks if the calling UID is trusted.
      * Dual-Layer Security Verification:

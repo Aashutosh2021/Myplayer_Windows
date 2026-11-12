@@ -31,15 +31,14 @@ fun ProfessionalMusicProgressBar(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val duration = durationMs.coerceAtLeast(1L)
+    val duration = if (durationMs > 0L) durationMs else 1L
     var isDragging by remember { mutableStateOf(false) }
     var dragProgress by remember { mutableFloatStateOf(0f) }
 
-    val currentProgress = if (isDragging) {
-        dragProgress
-    } else {
-        (positionMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
-    }
+    val rawProgress = if (durationMs > 0L) (positionMs.toFloat() / duration.toFloat()) else 0f
+    val actualProgress = if (rawProgress.isNaN() || rawProgress.isInfinite()) 0f else rawProgress.coerceIn(0f, 1f)
+    val safeDragProgress = if (dragProgress.isNaN() || dragProgress.isInfinite()) 0f else dragProgress.coerceIn(0f, 1f)
+    val currentProgress = (if (isDragging) safeDragProgress else actualProgress).coerceIn(0f, 1f)
 
     val thumbRadius by animateDpAsState(
         targetValue = if (isDragging) 8.dp else 6.dp,
@@ -62,22 +61,32 @@ fun ProfessionalMusicProgressBar(
                 .height(32.dp)
                 .pointerInput(duration) {
                     detectTapGestures { offset ->
-                        val newFraction = (offset.x / size.width).coerceIn(0f, 1f)
-                        onSeek((newFraction * duration).toLong())
+                        if (size.width <= 0) return@detectTapGestures
+                        val rawFraction = offset.x / size.width
+                        val newFraction = if (rawFraction.isNaN() || rawFraction.isInfinite()) 0f else rawFraction.coerceIn(0f, 1f)
+                        if (durationMs > 0L) onSeek((newFraction * duration).toLong())
                     }
                 }
                 .pointerInput(duration) {
                     detectDragGestures(
                         onDragStart = { offset ->
+                            if (size.width <= 0) return@detectDragGestures
                             isDragging = true
-                            dragProgress = (offset.x / size.width).coerceIn(0f, 1f)
+                            val rawDrag = offset.x / size.width
+                            dragProgress = if (rawDrag.isNaN() || rawDrag.isInfinite()) 0f else rawDrag.coerceIn(0f, 1f)
                         },
                         onDrag = { change, _ ->
                             change.consume()
-                            dragProgress = (change.position.x / size.width).coerceIn(0f, 1f)
+                            if (size.width > 0) {
+                                val rawChange = change.position.x / size.width
+                                if (!rawChange.isNaN() && !rawChange.isInfinite()) {
+                                    dragProgress = rawChange.coerceIn(0f, 1f)
+                                }
+                            }
                         },
                         onDragEnd = {
-                            onSeek((dragProgress * duration).toLong())
+                            val safeProgress = if (dragProgress.isNaN() || dragProgress.isInfinite()) 0f else dragProgress.coerceIn(0f, 1f)
+                            if (durationMs > 0L) onSeek((safeProgress * duration).toLong())
                             isDragging = false
                         },
                         onDragCancel = {
@@ -88,6 +97,7 @@ fun ProfessionalMusicProgressBar(
             contentAlignment = Alignment.Center
         ) {
             Canvas(modifier = Modifier.fillMaxWidth().height(24.dp)) {
+                if (size.width <= 0f || size.height <= 0f) return@Canvas
                 val canvasWidth = size.width
                 val canvasHeight = size.height
                 val centerY = canvasHeight / 2f
@@ -103,7 +113,8 @@ fun ProfessionalMusicProgressBar(
                 )
 
                 // Active played track
-                val activeWidth = (canvasWidth * currentProgress).coerceIn(0f, canvasWidth)
+                val rawActive = canvasWidth * currentProgress
+                val activeWidth = if (rawActive.isNaN() || rawActive.isInfinite()) 0f else rawActive.coerceIn(0f, canvasWidth)
                 if (activeWidth > 0f) {
                     drawRoundRect(
                         color = Primary,

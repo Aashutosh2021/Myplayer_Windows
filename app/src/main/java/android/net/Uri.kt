@@ -95,7 +95,7 @@ class Uri private constructor(private val uriString: String) {
                 } catch (_: Exception) {
                     stripped.replace("%20", " ")
                 }
-                val winNormalized = if (decoded.matches(Regex("^/[a-zA-Z]:/.*"))) {
+                val winNormalized = if (decoded.matches(Regex("^/[a-zA-Z]:[\\\\/].*"))) {
                     decoded.substring(1)
                 } else {
                     decoded

@@ -194,7 +194,7 @@ open class ExoPlayer(
         tempPcmFile = null
 
         if (player != null || factory != null || tempFile != null) {
-            playerScope.launch(Dispatchers.IO) {
+            playerScope.launch(Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
                 try {
                     player?.controls()?.stop()
                     player?.release()
@@ -350,8 +350,8 @@ open class ExoPlayer(
             )
 
             // Instruct libvlc to transcode the input stream into raw 16-bit 48kHz stereo PCM
-            val escapedDst = outPcmFile.absolutePath.replace("\\", "\\\\")
-            val soutOption = ":sout=#transcode{acodec=s16l,channels=2,samplerate=48000}:std{access=file,mux=raw,dst=\"$escapedDst\"}"
+            val normalizedDst = outPcmFile.absolutePath.replace('\\', '/')
+            val soutOption = ":sout=#transcode{acodec=s16l,channels=2,samplerate=48000}:std{access=file,mux=raw,dst=\"$normalizedDst\"}"
             val started = player.media().play(cleanPath, soutOption, ":no-sout-video", ":sout-keep")
             if (!started) {
                 cleanupVlcResources()

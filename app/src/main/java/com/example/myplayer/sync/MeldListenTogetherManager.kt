@@ -79,7 +79,7 @@ class MeldListenTogetherManager constructor(
     private var deviceId = UUID.randomUUID().toString()
     private var isHost = false
     private var lastBroadcastSongId: String? = null
-    private var isGuestSyncing = false
+    private var guestSyncJob: Job? = null
 
     init {
         // Host currentSong mirror
@@ -87,8 +87,8 @@ class MeldListenTogetherManager constructor(
             val mc = musicController ?: return@launch
             mc.currentSong.collect { song ->
                 if (_uiState.value.role == LtRole.HOST) {
-                    if (song != null && mc.isPlaying.value && song.id != lastBroadcastSongId) {
-                        Log.d(TAG, "Host started new song — broadcasting to room: ${song.title}")
+                    if (song != null && song.id != lastBroadcastSongId) {
+                        Log.d(TAG, "Host changed song — broadcasting to room: ${song.title}")
                         broadcastTrack(song)
                     } else if (song != null) {
                         _uiState.update { it.copy(currentTrack = toLtTrack(song)) }
@@ -311,6 +311,7 @@ class MeldListenTogetherManager constructor(
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e(TAG, "WebSocket failure: ${t.message}", t)
                 managerScope.launch {
+                    disconnect()
                     _uiState.update {
                         it.copy(
                             connectionState = LtConnectionState.ERROR,
@@ -550,7 +551,12 @@ class MeldListenTogetherManager constructor(
             }
 
             MeldPlaybackActions.PLAY -> {
-                val elapsed = maxOf(0L, (serverClock.now() ?: System.currentTimeMillis()) - action.serverTime)
+                val clockNow = serverClock.now()
+                val elapsed = if (action.serverTime > 0L && clockNow != null) {
+                    (clockNow - action.serverTime).coerceIn(0L, 15_000L)
+                } else {
+                    0L
+                }
                 val target = action.position + elapsed
                 val currentPos = musicController?.getCurrentPosition() ?: 0L
                 if (kotlin.math.abs(currentPos - target) > 1000L) {
@@ -571,9 +577,8 @@ class MeldListenTogetherManager constructor(
     }
 
     private fun applyGuestTrackSync(track: LtTrack, positionMs: Long, shouldPlay: Boolean) {
-        if (isGuestSyncing) return
-        isGuestSyncing = true
-        managerScope.launch {
+        guestSyncJob?.cancel()
+        guestSyncJob = managerScope.launch {
             try {
                 // 1. Try local match
                 val ref = SyncTrackRef(
@@ -604,10 +609,10 @@ class MeldListenTogetherManager constructor(
                     musicController?.pause()
                 }
                 sendBytes(MeldMessageCodec.encodeBufferReady(track.id))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to sync guest track: ${e.message}")
-            } finally {
-                isGuestSyncing = false
             }
         }
     }
@@ -615,7 +620,8 @@ class MeldListenTogetherManager constructor(
     private fun resetBookkeeping() {
         lastBroadcastSongId = null
         playbackRevision = 0L
-        isGuestSyncing = false
+        guestSyncJob?.cancel()
+        guestSyncJob = null
     }
 
     private fun toLtTrack(song: SongEntity) = LtTrack(

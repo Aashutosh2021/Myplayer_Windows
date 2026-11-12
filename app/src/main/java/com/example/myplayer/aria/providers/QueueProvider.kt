@@ -83,8 +83,8 @@ class QueueProvider @Inject constructor(
         val currentSong = musicController.currentSong.value
         val currentOnline = musicController.currentOnlineSong.value
         val currentIndex = currentQueue.indexOfFirst {
-            (currentSong != null && (it.id == currentSong.id || it.videoId == currentSong.videoId)) ||
-            (currentOnline != null && (it.id == currentOnline.videoId || it.videoId == currentOnline.videoId))
+            (currentSong != null && (it.id == currentSong.id || (!currentSong.videoId.isNullOrBlank() && it.videoId == currentSong.videoId))) ||
+            (currentOnline != null && (it.id == currentOnline.videoId || (!currentOnline.videoId.isNullOrBlank() && it.videoId == currentOnline.videoId)))
         }.coerceAtLeast(0)
 
         val songInfoList = currentQueue.map { song ->

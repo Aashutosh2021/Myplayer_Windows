@@ -29,6 +29,11 @@ class RecommendationMetrics @Inject constructor() {
         fetchCount.incrementAndGet()
     }
 
+    fun recordEmptyFetch() {
+        failureCount.incrementAndGet()
+        fetchCount.incrementAndGet()
+    }
+
     fun getHitRate(): Double {
         val total = hitCount.get() + missCount.get()
         return if (total == 0) 0.0 else hitCount.get().toDouble() / total.toDouble()

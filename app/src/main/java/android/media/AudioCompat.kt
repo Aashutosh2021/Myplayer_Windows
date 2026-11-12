@@ -153,7 +153,7 @@ class MediaMetadataRetriever {
             val isCovr = data[i] == 'c'.code.toByte() && data[i + 1] == 'o'.code.toByte() &&
                 data[i + 2] == 'v'.code.toByte() && data[i + 3] == 'r'.code.toByte()
             if (isApic || isCovr) {
-                val searchEnd = minOf(data.size - 4, i + 1024 * 1024)
+                val searchEnd = data.size - 2
                 for (j in i + 4 until searchEnd) {
                     // JPEG magic: FF D8 FF
                     if (data[j] == 0xFF.toByte() && data[j + 1] == 0xD8.toByte() && data[j + 2] == 0xFF.toByte()) {

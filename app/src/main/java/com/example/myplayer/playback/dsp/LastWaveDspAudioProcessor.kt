@@ -106,6 +106,7 @@ class LastWaveDspAudioProcessor @Inject constructor() : BaseAudioProcessor() {
             outputBuffer.putShort(clampedL)
             outputBuffer.putShort(clampedR)
         }
+        inputBuffer.position(inputBuffer.limit())
         outputBuffer.flip()
     }
 }

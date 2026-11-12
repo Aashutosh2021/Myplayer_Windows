@@ -121,6 +121,7 @@ class LoudnessAudioProcessor(private val service: AudioFxService) : AudioProcess
         service.loudnessReductionDb = meterReduction
         MyPlayerAudioTap.loudnessReductionDb = meterReduction
         out.flip()
+        inputBuffer.position(inputBuffer.limit())
     }
 
     private fun replaceOutputBuffer(size: Int): ByteBuffer {

@@ -366,7 +366,7 @@ fun PlaylistDetailScreen(
                     }
                 }
 
-                itemsIndexed(localSongs, key = { _, s -> s.id }) { index, song ->
+                itemsIndexed(localSongs, key = { index, s -> "${s.id}_${index}" }) { index, song ->
                     val isDragged = draggedSongId == song.id
                     val elevation by animateDpAsState(if (isDragged) 16.dp else 0.dp, label = "drag_elev")
 

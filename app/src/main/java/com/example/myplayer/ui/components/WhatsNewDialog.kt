@@ -47,19 +47,19 @@ object WhatsNewRepository {
 
     fun getCurrentFeatures(): List<WhatsNewFeature> = listOf(
         WhatsNewFeature(
+            icon = Icons.Filled.FolderOpen,
+            title = "Local Music Folder Access & Audio Scanner",
+            description = "Set your local music folder path in Settings or Library > Local Files to scan and play all your local MP3, M4A, FLAC, and WAV songs."
+        ),
+        WhatsNewFeature(
+            icon = Icons.Filled.AudioFile,
+            title = "Download MP3 / M4A Files to Device Storage",
+            description = "Every song menu now includes 'Download MP3 File' and 'Download M4A File' alongside 'Download Offline' so you can save accessible audio files directly in Downloads/MyPlayer & Music/MyPlayer."
+        ),
+        WhatsNewFeature(
             icon = Icons.Filled.PlayCircleFilled,
-            title = "YouTube Music Login & Account Sync",
-            description = "Sign in with your YouTube / YouTube Music account in Settings to automatically import your saved playlists, liked songs, and listening taste."
-        ),
-        WhatsNewFeature(
-            icon = Icons.Filled.AutoAwesome,
-            title = "Personalized YouTube AI Recommendations",
-            description = "Blends your personal YouTube Music Home mixes, Liked tracks, and live Up-Next radio directly into MyPlayer's 128-D on-device AI recommendation engine."
-        ),
-        WhatsNewFeature(
-            icon = Icons.Filled.PlaylistAdd,
-            title = "One-Tap YouTube & Spotify Playlist Link Import",
-            description = "Paste any YouTube, YouTube Music, or Spotify playlist URL in Library or Settings to import the entire playlist instantly."
+            title = "YouTube Music Login, Playlist Import & AI Recommendations",
+            description = "Sign in to YouTube Music or paste any YouTube/Spotify playlist link to import playlists and blend personalized recommendations into your 128-D AI engine."
         )
     )
 }

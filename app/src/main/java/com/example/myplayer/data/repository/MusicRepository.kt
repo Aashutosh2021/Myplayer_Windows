@@ -47,6 +47,7 @@ class MusicRepository @Inject constructor(
 
     // Playlists
     fun getAllPlaylists(): Flow<List<PlaylistEntity>> = playlistRepository.getAllPlaylists()
+    fun getAllPlaylistSongs(): Flow<List<PlaylistSongCrossReference>> = playlistRepository.getAllPlaylistSongs()
     fun getSongsInPlaylist(playlistId: Long): Flow<List<SongEntity>> = playlistRepository.getSongsInPlaylist(playlistId)
     fun getSongsInPlaylistAsPlayable(playlistId: Long): Flow<List<PlayableSong>> = playlistRepository.getSongsInPlaylistAsPlayable(playlistId)
     

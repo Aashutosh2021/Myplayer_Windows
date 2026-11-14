@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,8 +63,17 @@ fun PlaylistDetailScreen(
 
     val playlist by viewModel.playlist.collectAsStateWithLifecycle()
     val songs by viewModel.songs.collectAsStateWithLifecycle()
+    val playlistBatchProgress by viewModel.playlistDownloadProgress.collectAsStateWithLifecycle()
     var showAddSheet by remember { mutableStateOf(false) }
     var songToRemoveDownload by remember { mutableStateOf<PlayableSong?>(null) }
+    val exportStatusMessage by viewModel.exportStatusMessage.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(exportStatusMessage) {
+        exportStatusMessage?.let {
+            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
+            viewModel.clearExportStatusMessage()
+        }
+    }
 
     // Playlist rename flow: editable name buffer prefilled from current playlist
     var showRenameDialog by remember { mutableStateOf(false) }
@@ -98,13 +108,16 @@ fun PlaylistDetailScreen(
     // Drag state
     var draggedSongId by remember { mutableStateOf<String?>(null) }
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    var isSavingOrder by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    val itemSpacingPx = with(LocalDensity.current) { 12.dp.toPx() }
+    val defaultItemStridePx = with(LocalDensity.current) { 82.dp.toPx() }
 
     var localSongs by remember { mutableStateOf(songs) }
     
-    // Sync localSongs with DB songs only when not dragging
+    // Sync localSongs with DB songs only when not dragging or saving reorder
     LaunchedEffect(songs) {
-        if (draggedSongId == null) {
+        if (draggedSongId == null && !isSavingOrder) {
             localSongs = songs
         }
     }
@@ -281,9 +294,11 @@ fun PlaylistDetailScreen(
 
                         Spacer(Modifier.width(16.dp))
 
+                        val downloadedCount = remember(localSongs) { localSongs.count { it is PlayableSong.Downloaded } }
+
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "PLAYLIST • ${localSongs.size} SONGS",
+                                text = "PLAYLIST • ${localSongs.size} SONGS • $downloadedCount DOWNLOADED",
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 1.sp
@@ -348,6 +363,32 @@ fun PlaylistDetailScreen(
                         }
                     }
 
+                    val downloadedCount = remember(localSongs) { localSongs.count { it is PlayableSong.Downloaded } }
+                    val remainingCount = remember(localSongs) { localSongs.count { it is PlayableSong.Online } }
+                    val batch = playlistBatchProgress
+                    OutlinedButton(
+                        onClick = { viewModel.toggleDownloadRemainingSongs() },
+                        enabled = remainingCount > 0 || batch != null,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp).height(42.dp),
+                        shape = RoundedCornerShape(22.dp),
+                        border = BorderStroke(1.dp, if (batch != null || remainingCount > 0) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        if (batch != null) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Downloading ${batch.first}/${batch.second} • Tap to Cancel", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        } else if (remainingCount == 0) {
+                            Icon(Icons.Filled.DownloadDone, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("All Offline ($downloadedCount/${localSongs.size} Downloaded)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        } else {
+                            Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            val label = if (downloadedCount == 0) "Download All ($remainingCount)" else "Download Remaining ($remainingCount)"
+                            Text("$label • $downloadedCount/${localSongs.size} Ready", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        }
+                    }
+
                     Row(
                         modifier = Modifier.padding(bottom = 4.dp, start = 4.dp, top = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -381,35 +422,42 @@ fun PlaylistDetailScreen(
                         onRemove = { viewModel.removeSong(song.id) },
                         onRemoveDownload = { songToRemoveDownload = song },
                         onDownload = if (song is PlayableSong.Online) { { viewModel.downloadSong(song) } } else null,
+                        onExportFile = { fmt -> viewModel.exportSongAsFile(song, fmt) },
                         onDragStart = { draggedSongId = song.id; dragOffsetY = 0f },
                         onDrag = { deltaY ->
                             dragOffsetY += deltaY
                             val currentIndex = localSongs.indexOfFirst { it.id == song.id }
                             if (currentIndex == -1) return@PlaylistSongRow
 
-                            val itemHeight = 92f // approximate row height + spacing
-                            var newIndex = currentIndex
-                            if (dragOffsetY > itemHeight) {
-                                newIndex = currentIndex + 1
-                                dragOffsetY -= itemHeight
-                            } else if (dragOffsetY < -itemHeight) {
-                                newIndex = currentIndex - 1
-                                dragOffsetY += itemHeight
-                            }
+                            val itemStridePx = listState.layoutInfo.visibleItemsInfo
+                                .firstOrNull { it.key == song.id }
+                                ?.let { (it.size.toFloat() + itemSpacingPx).coerceAtLeast(defaultItemStridePx * 0.5f) }
+                                ?: defaultItemStridePx
 
-                            newIndex = newIndex.coerceIn(0, localSongs.size - 1)
-                            
-                            if (newIndex != currentIndex) {
+                            if (dragOffsetY > itemStridePx * 0.6f && currentIndex < localSongs.size - 1) {
                                 val currentList = localSongs.toMutableList()
                                 val itemToMove = currentList.removeAt(currentIndex)
-                                currentList.add(newIndex, itemToMove)
+                                currentList.add(currentIndex + 1, itemToMove)
                                 localSongs = currentList
+                                dragOffsetY -= itemStridePx
+                            } else if (dragOffsetY < -itemStridePx * 0.6f && currentIndex > 0) {
+                                val currentList = localSongs.toMutableList()
+                                val itemToMove = currentList.removeAt(currentIndex)
+                                currentList.add(currentIndex - 1, itemToMove)
+                                localSongs = currentList
+                                dragOffsetY += itemStridePx
+                            } else {
+                                if (currentIndex == 0 && dragOffsetY < 0f) dragOffsetY = dragOffsetY.coerceAtLeast(-itemStridePx * 0.35f)
+                                if (currentIndex == localSongs.size - 1 && dragOffsetY > 0f) dragOffsetY = dragOffsetY.coerceAtMost(itemStridePx * 0.35f)
                             }
                         },
                         onDragEnd = { 
                             draggedSongId = null 
                             dragOffsetY = 0f 
-                            viewModel.saveReorder(localSongs.map { it.id })
+                            isSavingOrder = true
+                            viewModel.saveReorder(localSongs.map { it.id }) {
+                                isSavingOrder = false
+                            }
                         }
                     )
                 }
@@ -434,6 +482,7 @@ fun PlaylistSongRow(
     onRemove: () -> Unit,
     onRemoveDownload: (() -> Unit)? = null,
     onDownload: (() -> Unit)? = null,
+    onExportFile: ((String) -> Unit)? = null,
     onDragStart: () -> Unit = {},
     onDrag: (Float) -> Unit = {},
     onDragEnd: () -> Unit = {}
@@ -581,9 +630,21 @@ fun PlaylistSongRow(
                 }
                 if (song is PlayableSong.Online && onDownload != null) {
                     DropdownMenuItem(
-                        text = { Text("Download", color = ClayPrimary) },
+                        text = { Text("Download Offline (In-App)", color = ClayPrimary) },
                         leadingIcon = { Icon(Icons.Filled.Download, null, tint = ClayPrimary) },
                         onClick = { showMenu = false; onDownload() }
+                    )
+                }
+                if (onExportFile != null) {
+                    DropdownMenuItem(
+                        text = { Text("Download MP3 File (Save to PC)", color = MaterialTheme.colorScheme.onSurface) },
+                        leadingIcon = { Icon(Icons.Filled.AudioFile, null, tint = ClayPrimary) },
+                        onClick = { showMenu = false; onExportFile("mp3") }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Download M4A File (Save to PC)", color = MaterialTheme.colorScheme.onSurface) },
+                        leadingIcon = { Icon(Icons.Filled.SaveAlt, null, tint = ClayPrimary) },
+                        onClick = { showMenu = false; onExportFile("m4a") }
                     )
                 }
             }

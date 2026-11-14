@@ -419,6 +419,7 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
                         isDownloading = isDownloading,
                         onDownloadClick = { viewModel.downloadCurrentSong() },
                         onRemoveDownloadClick = { viewModel.removeCurrentSongDownload() },
+                        onExportAudioFileClick = { fmt -> viewModel.exportCurrentSongAsFile(fmt) },
                         audioQuality = currentAudioQuality,
                         title = displayTitle,
                         artist = displayArtist,

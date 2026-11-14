@@ -8349,9 +8349,9 @@ fun MyPlayerMultiStyleNowPlayingScreen(
 
     onDownloadClick: () -> Unit = {},
 
-
-
     onRemoveDownloadClick: () -> Unit = {},
+
+    onExportAudioFileClick: (String) -> Unit = {},
 
 
 
@@ -8997,23 +8997,42 @@ fun MyPlayerMultiStyleNowPlayingScreen(
 
                             onClick = {
 
-
-
                                 showOptionsMenu = false
-
-
 
                                 if (isDownloaded) showRemoveConfirm = true else if (!isDownloading) onDownloadClick()
 
-
-
                             }
-
-
 
                         )
 
-
+                        DropdownMenuItem(
+                            text = { Text("Download MP3 File (Save to PC)", color = onBg) },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Filled.AudioFile,
+                                    contentDescription = null,
+                                    tint = NeonLimePrimary
+                                )
+                            },
+                            onClick = {
+                                showOptionsMenu = false
+                                onExportAudioFileClick("mp3")
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Download M4A File (Save to PC)", color = onBg) },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Filled.SaveAlt,
+                                    contentDescription = null,
+                                    tint = NeonLimePrimary
+                                )
+                            },
+                            onClick = {
+                                showOptionsMenu = false
+                                onExportAudioFileClick("m4a")
+                            }
+                        )
 
                     }
 
@@ -15557,7 +15576,7 @@ fun MyPlayerProfileSheetDialog(
 
 
 
-                            Text("8.2.3", fontSize = 34.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+                            Text(com.example.myplayer.BuildConfig.VERSION_NAME, fontSize = 34.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
 
 
 

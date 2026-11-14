@@ -29,6 +29,9 @@ interface SongDao {
     @Query("DELETE FROM songs WHERE path LIKE :folderUri || '%'")
     fun deleteSongsByFolder(folderUri: String): Unit
 
+    @Query("DELETE FROM songs WHERE path NOT LIKE 'online://%' AND id NOT LIKE 'spotify:%'")
+    fun clearAllLocalSongs(): Unit
+
     @Query("SELECT * FROM songs ORDER BY dateAdded DESC LIMIT 50")
     fun getRecentlyAddedSongs(): Flow<List<SongEntity>>
 

@@ -54,6 +54,32 @@ class DownloadsViewModel @Inject constructor(
             downloadRepository.deleteDownload(song)
         }
     }
+
+    private val _exportMessage = MutableStateFlow<String?>(null)
+    val exportMessage: StateFlow<String?> = _exportMessage.asStateFlow()
+    fun clearExportMessage() { _exportMessage.value = null }
+
+    fun exportSongAsFile(song: DownloadedSongEntity, formatExt: String = "mp3") {
+        viewModelScope.launch {
+            val extLabel = formatExt.uppercase()
+            val res = downloadRepository.exportSongToDeviceStorage(
+                com.example.myplayer.data.online.model.OnlineSong(
+                    videoId = song.id,
+                    title = song.title,
+                    artist = song.artist,
+                    thumbnailUrl = song.thumbnailUrl,
+                    durationMs = song.durationMs,
+                    streamUrl = song.localPath
+                ),
+                formatExt = formatExt
+            )
+            res.onSuccess { savedLoc ->
+                _exportMessage.value = "Saved $extLabel file to: $savedLoc"
+            }.onFailure { err ->
+                _exportMessage.value = "Failed to save $extLabel file: ${err.message}"
+            }
+        }
+    }
 }
 
 

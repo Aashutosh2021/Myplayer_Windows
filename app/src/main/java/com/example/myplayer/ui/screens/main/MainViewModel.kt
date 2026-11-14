@@ -342,6 +342,66 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    fun exportCurrentSongAsFile(formatExt: String = "mp3") {
+        val currentLocal = currentSong.value
+        val currentOnline = currentOnlineSong.value
+        val song = getDownloadableTrack(currentOnline, currentLocal, downloadedIds.value)
+            ?: currentLocal?.let {
+                OnlineSong(
+                    videoId = it.videoId ?: it.id,
+                    title = it.title,
+                    artist = it.artist,
+                    thumbnailUrl = it.albumArt ?: "",
+                    durationMs = it.duration,
+                    streamUrl = it.path
+                )
+            }
+            ?: return
+
+        val extLabel = formatExt.uppercase()
+        _downloadError.value = "Saving '${song.title}' as .$extLabel to Downloads/MyPlayer..."
+
+        viewModelScope.launch {
+            try {
+                val rawId = song.videoId.removePrefix("online://").removePrefix("spotify:").trim()
+                var streamOrLocalPath = song.streamUrl
+                var realYtId = rawId
+
+                val alreadyLocal = !streamOrLocalPath.isNullOrBlank() && !streamOrLocalPath.startsWith("http") && !streamOrLocalPath.startsWith("online://")
+                if (!alreadyLocal && !downloadRepository.isDownloaded(rawId)) {
+                    if (!youtubeIdRegex.matches(rawId)) {
+                        val query = "${song.title} ${song.artist}".trim()
+                        val matchedYtId = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            runCatching {
+                                innertubeApi.search(query, filtered = true).songs.firstOrNull()?.videoId
+                                    ?: innertubeApi.search(query, filtered = false).songs.firstOrNull()?.videoId
+                            }.getOrNull()
+                        }
+                        if (!matchedYtId.isNullOrBlank()) {
+                            realYtId = matchedYtId
+                        }
+                    }
+                    if (streamOrLocalPath.isNullOrBlank() || !streamOrLocalPath.startsWith("http")) {
+                        streamOrLocalPath = innertubeApi.getCachedStreamUrl(realYtId)
+                            ?: innertubeApi.getStreamUrl(realYtId)
+                    }
+                }
+
+                val res = downloadRepository.exportSongToDeviceStorage(
+                    song.copy(videoId = realYtId, streamUrl = streamOrLocalPath),
+                    formatExt = formatExt
+                )
+                res.onSuccess { savedLocation ->
+                    _downloadError.value = "Saved $extLabel to: $savedLocation"
+                }.onFailure { err ->
+                    _downloadError.value = "Failed to save $extLabel file: ${err.message}"
+                }
+            } catch (e: Exception) {
+                _downloadError.value = "Failed to save $extLabel file: ${e.message}"
+            }
+        }
+    }
+
     // ── Context-Aware Side Track List (Recommendations / Downloads / Playlists) ──
     val playbackSourceContext: StateFlow<PlaybackSourceContext> = musicController.playbackSourceContext
     val contextTitle: StateFlow<String> = musicController.contextTitle

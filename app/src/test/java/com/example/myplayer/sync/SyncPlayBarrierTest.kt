@@ -119,6 +119,7 @@ class SyncPlayBarrierTest {
             override fun getSongById(id: String): SongEntity? = localSongs.find { it.id == id }
             override fun insertSongs(songs: List<SongEntity>) { localSongs.addAll(songs) }
             override fun deleteSongsByFolder(folderUri: String) {}
+            override fun clearAllLocalSongs() {}
             override fun getRecentlyAddedSongs(): Flow<List<SongEntity>> = flowOf(emptyList())
             override fun getMostPlayedSongs(): Flow<List<SongEntity>> = flowOf(emptyList())
             override fun incrementPlayCount(id: String) {}

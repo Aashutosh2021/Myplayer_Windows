@@ -24,6 +24,7 @@ class AriaSdkTests {
         override fun getSongById(id: String): SongEntity? = null
         override fun insertSongs(songs: List<SongEntity>) {}
         override fun deleteSongsByFolder(folderUri: String) {}
+        override fun clearAllLocalSongs() {}
         override fun getRecentlyAddedSongs(): Flow<List<SongEntity>> = flowOf(emptyList())
         override fun getMostPlayedSongs(): Flow<List<SongEntity>> = flowOf(emptyList())
         override fun incrementPlayCount(id: String) {}

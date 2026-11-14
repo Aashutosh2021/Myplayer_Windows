@@ -42,13 +42,17 @@ class SongRepository @Inject constructor(
 
     suspend fun addFolder(uri: String, name: String) = withContext(Dispatchers.IO) {
         val folder = FolderEntity(uri, name)
+        folderDao.clearAllFolders()
         folderDao.addFolder(folder)
-        mediaScanner.scanFolder(folder)
+        mediaScanner.scanAllFolders()
     }
 
     suspend fun removeFolder(folder: FolderEntity) = withContext(Dispatchers.IO) {
         folderDao.deleteFolder(folder)
-        songDao.deleteSongsByFolder(folder.uri)
+        songDao.clearAllLocalSongs()
+        if (folderDao.getFoldersSync().isNotEmpty()) {
+            mediaScanner.scanAllFolders()
+        }
     }
 
     suspend fun rescanAllFolders() = withContext(Dispatchers.IO) {

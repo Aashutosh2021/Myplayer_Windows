@@ -26,14 +26,24 @@ interface PlaylistDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     fun insertSongToPlaylist(crossRef: PlaylistSongCrossReference): Unit
 
-    @Query("DELETE FROM playlist_songs WHERE playlistId = :playlistId AND songId = :songId")
+    @Query("DELETE FROM playlist_songs WHERE playlistId = :playlistId AND (songId = :songId OR songId = 'spotify:' || :songId OR songId IN (SELECT id FROM songs WHERE videoId = :songId OR path = 'online://' || :songId))")
     fun removeSongFromPlaylist(playlistId: Long, songId: String): Unit
 
     @Query("SELECT songs.* FROM songs \n        INNER JOIN playlist_songs ON songs.id = playlist_songs.songId \n        WHERE playlist_songs.playlistId = :playlistId \n        ORDER BY playlist_songs.position ASC\n    ")
     fun getSongsInPlaylist(playlistId: Long): Flow<List<SongEntity>>
 
-    @Query("UPDATE playlist_songs SET position = :position WHERE playlistId = :playlistId AND songId = :songId")
+    @Query("UPDATE playlist_songs SET position = :position WHERE playlistId = :playlistId AND (songId = :songId OR songId = 'spotify:' || :songId OR songId IN (SELECT id FROM songs WHERE videoId = :songId OR path = 'online://' || :songId))")
     suspend fun updateSongPosition(playlistId: Long, songId: String, position: Int)
+
+    @Transaction
+    suspend fun reorderPlaylistSongs(playlistId: Long, orderedSongIds: List<String>) {
+        orderedSongIds.forEachIndexed { index, songId ->
+            updateSongPosition(playlistId, songId, index)
+        }
+    }
+
+    @Query("SELECT * FROM playlist_songs")
+    fun getAllPlaylistSongs(): Flow<List<PlaylistSongCrossReference>>
 
     @Query("SELECT * FROM playlist_songs")
     fun getAllPlaylistSongsSync(): List<PlaylistSongCrossReference>

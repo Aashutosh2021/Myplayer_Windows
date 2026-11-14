@@ -1,9 +1,9 @@
-# 🎵 MyPlayer for Windows (v6.2)
+# 🎵 MyPlayer for Windows (v6.6)
 
 <div align="center">
 
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?style=for-the-badge&logo=windows&logoColor=white)
-![Version](https://img.shields.io/badge/Version-v6.2-brightgreen?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-v6.6-brightgreen?style=for-the-badge)
 ![Kotlin](https://img.shields.io/badge/Kotlin-100%25-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)
 ![Compose Multiplatform](https://img.shields.io/badge/UI-Compose%20Multiplatform-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)
 ![Audio Engine](https://img.shields.io/badge/Audio-JavaSound%20%2B%20VLCJ-E95420?style=for-the-badge)
@@ -12,6 +12,19 @@
 
 <p align="center">
   <b>A modern, high-performance Windows desktop music player built with Compose Multiplatform. Features custom native branding, an interactive installer with desktop shortcut prompt, direct hardware-accelerated 48kHz PCM audio, YouTube link search, synchronized lyrics, dark/light themes, and DualBud mode for split-earbud playback.</b>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Aashutosh2021/Myplayer_Windows/releases/latest">
+    <img src="https://img.shields.io/badge/Download-Windows%20(v6.6)-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Download Windows Release" />
+  </a>
+  <a href="https://github.com/Aashutosh2021/MyPlayer_Android">
+    <img src="https://img.shields.io/badge/Android%20Mobile-MyPlayer%20v6.6-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="MyPlayer for Android" />
+  </a>
+</p>
+
+<p align="center">
+  Looking for mobile? Check out <a href="https://github.com/Aashutosh2021/MyPlayer_Android"><b>MyPlayer for Android</b></a> (<a href="https://github.com/Aashutosh2021/MyPlayer_Android/releases/latest">Latest APK Release</a>).
 </p>
 
 </div>
@@ -62,8 +75,8 @@
   - Windows `.msi` and `.exe` installers feature an interactive checkbox allowing users to choose whether to create desktop and start menu shortcuts upon installation (`--win-shortcut-prompt`).
 - **🔗 Search via YouTube / YouTube Music Link**:
   - Direct URL search bar pasting: paste any YouTube or YouTube Music link to immediately resolve, stream, and match metadata.
-- **🚀 "What's New in v6.2" In-App Dialog**:
-  - Automatic startup changelog highlighting the latest features, release notes, and updates.
+- **🚀 "What's New in v6.6" In-App Dialog**:
+  - Automatic startup changelog featuring YouTube Music Login & Account Sync, Personalized YouTube AI Recommendations, and One-Tap YouTube & Spotify Playlist Link Import.
 - **☕ In-App Developer Support (UPI / Coffee)**:
   - Support ad-free open-source development directly via GPay, PhonePe, or UPI QR code.
 - **🎧 Dual Bud Mode (Split Earbud Playback)**:
@@ -170,14 +183,14 @@ MyPlayer_Windows/
   .\gradlew.bat :app:packageMsi
   ```
   The installer `.msi` will be output to:
-  `app\build\compose\binaries\main\msi\MyPlayer-6.2.0.msi`
+  `app\build\compose\binaries\main\msi\MyPlayer-6.6.0.msi`
 
 - **Build Windows Executable Installer**:
   ```bash
   .\gradlew.bat :app:packageExe
   ```
   The installer `.exe` will be output to:
-  `app\build\compose\binaries\main\exe\MyPlayer-6.2.0.exe`
+  `app\build\compose\binaries\main\exe\MyPlayer-6.6.0.exe`
 
 ---
 

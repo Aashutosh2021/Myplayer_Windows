@@ -114,6 +114,11 @@ fun SettingsScreen(
     val isAutoplayEnabled by viewModel.isAutoplayEnabled.collectAsStateWithLifecycle()
 
     val downloadFolderUri by viewModel.downloadFolderUri.collectAsStateWithLifecycle()
+    val localFolders by viewModel.localFolders.collectAsStateWithLifecycle()
+    val localSongsCount by viewModel.localSongsCount.collectAsStateWithLifecycle()
+    val isScanningLocal by viewModel.isScanningLocal.collectAsStateWithLifecycle()
+    var showManualFolderDialog by remember { mutableStateOf(false) }
+    var manualFolderPathInput by remember { mutableStateOf(java.io.File(System.getProperty("user.home") ?: ".", "Music").absolutePath) }
 
     val userName by viewModel.userName.collectAsStateWithLifecycle()
 
@@ -359,6 +364,86 @@ fun SettingsScreen(
 
         uri?.let { viewModel.importBackup(it) }
 
+    }
+
+    val localMusicFolderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            val cleanPath = uri.path ?: uri.toString()
+            val folderName = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)?.name
+                ?: cleanPath.substringAfterLast('/').substringAfterLast('\\')
+                .ifBlank { "Local Music" }
+            viewModel.addLocalMusicFolder(cleanPath, folderName)
+        }
+    }
+
+    val customDownloadFolderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            val cleanPath = uri.path ?: uri.toString()
+            viewModel.setDownloadFolder(cleanPath)
+            showDialogText = "Download folder updated to: $cleanPath"
+        }
+    }
+
+    if (showManualFolderDialog) {
+        AlertDialog(
+            onDismissRequest = { showManualFolderDialog = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            title = { Text("Set Local Music Folder Path", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "Enter the folder path on your PC containing your local MP3 / M4A / FLAC / WAV songs, or click 'Open System Folder Picker' to browse:",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedTextField(
+                        value = manualFolderPathInput,
+                        onValueChange = { manualFolderPathInput = it },
+                        singleLine = true,
+                        label = { Text("Local Folder Path") },
+                        placeholder = { Text("C:\\Users\\YourName\\Music") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            showManualFolderDialog = false
+                            localMusicFolderLauncher.launch(null)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Filled.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Open System Folder Picker")
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val cleaned = manualFolderPathInput.trim()
+                        if (cleaned.isNotBlank()) {
+                            val name = cleaned.trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\').ifBlank { "Local Music" }
+                            viewModel.addLocalMusicFolder(cleaned, name)
+                            showManualFolderDialog = false
+                        }
+                    },
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Save & Scan Path", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showManualFolderDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
 
@@ -1426,6 +1511,132 @@ fun SettingsScreen(
                             showInteractiveTour = true
                         }
                     )
+                }
+
+            }
+
+        }
+
+
+
+        // Section: Local Music & Download Storage
+
+        item { MyPlayerSectionHeader(title = "Local Music & Download Storage") }
+
+        item {
+
+            MyPlayerSettingsCard {
+
+                MyPlayerSettingsNavigationRow(
+
+                    icon = Icons.Filled.FolderOpen,
+
+                    title = "Select Local Music Folder",
+
+                    subtitle = "Choose any folder on your PC to play local MP3, M4A, FLAC & WAV songs",
+
+                    onClick = { localMusicFolderLauncher.launch(null) }
+
+                )
+
+                MyPlayerSettingsDivider()
+
+                MyPlayerSettingsNavigationRow(
+
+                    icon = Icons.Filled.CreateNewFolder,
+
+                    title = "Set Local Folder Path Manually",
+
+                    subtitle = "Type or paste a local directory path (e.g. C:\\Users\\...\\Music)",
+
+                    onClick = { showManualFolderDialog = true }
+
+                )
+
+                MyPlayerSettingsDivider()
+
+                MyPlayerSettingsNavigationRow(
+
+                    icon = Icons.Filled.LibraryMusic,
+
+                    title = if (isScanningLocal) "Scanning Local Audio Files..." else "Scan All Local Songs ($localSongsCount songs)",
+
+                    subtitle = "Index all local audio files from your configured folders into Library > Local Files",
+
+                    onClick = {
+
+                        if (!isScanningLocal) {
+
+                            viewModel.rescanLocalMusic()
+
+                        }
+
+                    }
+
+                )
+
+                localFolders.forEach { folder ->
+
+                    MyPlayerSettingsDivider()
+
+                    MyPlayerSettingsNavigationRow(
+
+                        icon = Icons.Filled.Folder,
+
+                        title = "Folder: ${folder.name}",
+
+                        subtitle = "${folder.uri} • Click to remove",
+
+                        onClick = { viewModel.removeLocalMusicFolder(folder) }
+
+                    )
+
+                }
+
+                MyPlayerSettingsDivider()
+
+                MyPlayerSettingsNavigationRow(
+
+                    icon = Icons.Filled.Download,
+
+                    title = "Set Download Folder Path",
+
+                    subtitle = if (downloadFolderUri.isNullOrBlank()) {
+
+                        "Default: Downloads/MyPlayer & Music/MyPlayer (Click to choose custom folder)"
+
+                    } else {
+
+                        "Custom Folder: $downloadFolderUri"
+
+                    },
+
+                    onClick = { customDownloadFolderLauncher.launch(null) }
+
+                )
+
+                if (!downloadFolderUri.isNullOrBlank()) {
+
+                    MyPlayerSettingsDivider()
+
+                    MyPlayerSettingsNavigationRow(
+
+                        icon = Icons.Filled.Restore,
+
+                        title = "Reset Download Folder to Default",
+
+                        subtitle = "Save MP3 / M4A files to Downloads/MyPlayer & Music/MyPlayer",
+
+                        onClick = {
+
+                            viewModel.setDownloadFolder(null)
+
+                            showDialogText = "Download folder reset to Downloads/MyPlayer."
+
+                        }
+
+                    )
+
                 }
 
             }

@@ -22,10 +22,13 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -45,10 +48,14 @@ class DownloadRepository @Inject constructor(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val activeJobs = ConcurrentHashMap<String, Job>()
+    private val batchJobs = ConcurrentHashMap<Long, Job>()
     private val lyricsRepository by lazy { LyricsRepository(context, okHttpClient, cachedLyricsDao) }
 
     private val _downloadProgress = MutableStateFlow<Map<String, Int>>(emptyMap())
     val downloadProgress: StateFlow<Map<String, Int>> = _downloadProgress.asStateFlow()
+
+    private val _playlistBatchStatus = MutableStateFlow<Map<Long, Pair<Int, Int>>>(emptyMap())
+    val playlistBatchStatus: StateFlow<Map<Long, Pair<Int, Int>>> = _playlistBatchStatus.asStateFlow()
 
     fun setDownloadProgress(videoId: String, progress: Int) {
         _downloadProgress.update { it + (videoId to progress) }
@@ -59,6 +66,38 @@ class DownloadRepository @Inject constructor(
     }
 
     fun isDownloading(videoId: String): Boolean = _downloadProgress.value.containsKey(videoId)
+
+    fun cancelPlaylistBatchDownload(playlistId: Long) {
+        batchJobs.remove(playlistId)?.cancel()
+        _playlistBatchStatus.update { it - playlistId }
+    }
+
+    fun startSequentialDownloads(
+        playlistId: Long,
+        songs: List<PlayableSong.Online>,
+        resolveSong: suspend (PlayableSong.Online) -> OnlineSong?
+    ) {
+        if (songs.isEmpty()) return
+        if (batchJobs[playlistId]?.isActive == true) return
+        val job = scope.launch {
+            try {
+                songs.forEachIndexed { index, song ->
+                    _playlistBatchStatus.update { it + (playlistId to (index + 1 to songs.size)) }
+                    val resolved = runCatching { resolveSong(song) }.getOrNull() ?: return@forEachIndexed
+                    if (isDownloaded(resolved.videoId)) return@forEachIndexed
+                    if (!startDownload(resolved)) return@forEachIndexed
+                    withTimeoutOrNull(1500L) {
+                        downloadProgress.first { it.containsKey(resolved.videoId) }
+                    }
+                    downloadProgress.first { !it.containsKey(resolved.videoId) }
+                }
+            } finally {
+                batchJobs.remove(playlistId)
+                _playlistBatchStatus.update { it - playlistId }
+            }
+        }
+        batchJobs[playlistId] = job
+    }
 
     fun getAllDownloads(): Flow<List<DownloadedSongEntity>> = downloadedSongDao.getAllDownloads()
 
@@ -428,6 +467,138 @@ class DownloadRepository @Inject constructor(
                 }
                 Log.i("DownloadRepository", "Cleaned up ${toDelete.size} invalid download records.")
             }
+        }
+    }
+
+    /**
+     * Downloads and saves the song directly as a user-accessible `.mp3` or `.m4a` file
+     * in the user's configured custom folder (or `Downloads/MyPlayer` & `Music/MyPlayer` on PC),
+     * and indexes it into `songDao` so it also appears under `Library > Local Files`.
+     */
+    suspend fun exportSongToDeviceStorage(
+        song: OnlineSong,
+        formatExt: String = "mp3"
+    ): Result<String> = withContext(Dispatchers.IO) {
+        val ext = if (formatExt.lowercase().trim() == "m4a") "m4a" else "mp3"
+        val invalidCharsRegex = Regex("""[\\/:*?"<>|\r\n\t]""")
+        fun sanitizeSegment(raw: String, maxLen: Int, fallback: String): String =
+            raw.replace(invalidCharsRegex, " ").replace(Regex(" {2,}"), " ").trim().take(maxLen).ifBlank { fallback }
+        val safeTitle = sanitizeSegment(song.title, 55, "Track_${song.videoId}")
+        val safeArtist = sanitizeSegment(song.artist, 40, "MyPlayer")
+
+        val displayFileName = "$safeTitle - $safeArtist.$ext"
+        var tempStagingFile: File? = null
+
+        runCatching {
+            setDownloadProgress(song.videoId, 1)
+
+            val existing = downloadedSongDao.getById(song.videoId)
+            val stagingDir = File(context.cacheDir, "exports").apply { mkdirs() }
+            val stagingFile = File(stagingDir, "export_${song.videoId}_${System.currentTimeMillis()}.$ext")
+            tempStagingFile = stagingFile
+
+            var copiedLocal = false
+            if (existing != null) {
+                val resolved = DesktopAudioBackend.resolveLocalFile(existing.localPath) ?: File(existing.localPath)
+                if (resolved.exists() && resolved.length() > 0L) {
+                    resolved.copyTo(stagingFile, overwrite = true)
+                    copiedLocal = true
+                }
+            }
+            val songStreamUrl = song.streamUrl
+            if (!copiedLocal && !songStreamUrl.isNullOrBlank() && !songStreamUrl.startsWith("http")) {
+                val cleanLocal = if (songStreamUrl.startsWith("file://")) {
+                    Uri.parse(songStreamUrl).path ?: songStreamUrl.removePrefix("file://")
+                } else songStreamUrl
+                val f = File(cleanLocal)
+                if (f.exists() && f.length() > 0L) {
+                    f.copyTo(stagingFile, overwrite = true)
+                    copiedLocal = true
+                }
+            }
+
+            if (!copiedLocal) {
+                val rawStreamUrl = DesktopChunkStreamProxy.unwrapUpstreamUrlIfProxy(song.streamUrl)
+                    ?.takeIf { it.startsWith("http") }
+                    ?: throw IllegalStateException("No valid audio stream URL to download")
+                val userAgent = "com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip"
+                val req = Request.Builder().url(rawStreamUrl).addHeader("User-Agent", userAgent).build()
+                okHttpClient.newCall(req).execute().use { response ->
+                    if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+                    val body = response.body ?: throw IOException("Empty body")
+                    val len = body.contentLength()
+                    val stream = body.byteStream()
+                    stagingFile.outputStream().use { out ->
+                        val buf = ByteArray(16384)
+                        var downloaded = 0L
+                        while (true) {
+                            val r = stream.read(buf)
+                            if (r == -1) break
+                            out.write(buf, 0, r)
+                            downloaded += r
+                            if (len > 0) {
+                                setDownloadProgress(song.videoId, ((downloaded * 100) / len).toInt().coerceIn(1, 99))
+                            }
+                        }
+                        out.flush()
+                    }
+                }
+            }
+
+            if (!stagingFile.exists() || stagingFile.length() <= 0L) {
+                throw IOException("Downloaded audio file is empty")
+            }
+
+            val prefsMgr = com.example.myplayer.data.local.prefs.PreferencesManager(context)
+            val customFolderUriStr = prefsMgr.downloadFolderUri.firstOrNull()
+            val targetDirs = mutableListOf<File>()
+
+            if (!customFolderUriStr.isNullOrBlank()) {
+                val customPath = if (customFolderUriStr.startsWith("file://")) {
+                    Uri.parse(customFolderUriStr).path ?: customFolderUriStr.removePrefix("file://")
+                } else customFolderUriStr
+                targetDirs.add(File(customPath))
+            }
+
+            val userHome = System.getProperty("user.home") ?: "."
+            targetDirs.add(File(File(userHome, "Downloads"), "MyPlayer"))
+            targetDirs.add(File(File(userHome, "Music"), "MyPlayer"))
+
+            var primarySavedFile: File? = null
+            for (dir in targetDirs.distinctBy { it.absolutePath }) {
+                runCatching {
+                    dir.mkdirs()
+                    val dest = File(dir, displayFileName)
+                    stagingFile.copyTo(dest, overwrite = true)
+                    if (primarySavedFile == null) primarySavedFile = dest
+                }
+            }
+
+            val finalFile = primarySavedFile ?: throw IOException("Could not write file to Downloads/MyPlayer")
+            val songId = "local_${java.security.MessageDigest.getInstance("MD5").digest(finalFile.absolutePath.toByteArray()).joinToString("") { "%02x".format(it) }.take(16)}"
+
+            songDao.insertSongs(
+                listOf(
+                    com.example.myplayer.data.local.entity.SongEntity(
+                        id = songId,
+                        title = song.title,
+                        artist = song.artist,
+                        album = "MyPlayer (${ext.uppercase()})",
+                        duration = song.durationMs,
+                        path = finalFile.absolutePath,
+                        albumArt = song.thumbnailUrl.ifBlank { null },
+                        dateAdded = System.currentTimeMillis(),
+                        playCount = 0,
+                        videoId = song.videoId.takeIf { it.length == 11 }
+                    )
+                )
+            )
+
+            setDownloadProgress(song.videoId, 100)
+            finalFile.absolutePath
+        }.also {
+            removeDownload(song.videoId)
+            runCatching { tempStagingFile?.delete() }
         }
     }
 

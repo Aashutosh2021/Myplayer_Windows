@@ -28,7 +28,9 @@ class PlaylistRepository @Inject constructor(
     private val downloadedSongDao: DownloadedSongDao
 ) {
     fun getAllPlaylists(): Flow<List<PlaylistEntity>> = playlistDao.getAllPlaylists()
-    
+
+    fun getAllPlaylistSongs(): Flow<List<PlaylistSongCrossReference>> = playlistDao.getAllPlaylistSongs()
+
     fun getSongsInPlaylist(playlistId: Long): Flow<List<SongEntity>> = playlistDao.getSongsInPlaylist(playlistId)
 
     fun getSongsInPlaylistAsPlayable(playlistId: Long): Flow<List<PlayableSong>> {
@@ -122,9 +124,7 @@ class PlaylistRepository @Inject constructor(
 
     suspend fun reorderSongsInPlaylist(playlistId: Long, orderedSongIds: List<String>) = withContext(Dispatchers.IO) {
         try {
-            orderedSongIds.forEachIndexed { index, songId ->
-                playlistDao.updateSongPosition(playlistId, songId, index)
-            }
+            playlistDao.reorderPlaylistSongs(playlistId, orderedSongIds)
         } catch (e: Exception) {
             android.util.Log.e("PlaylistRepository", "Failed to reorder playlist $playlistId", e)
         }

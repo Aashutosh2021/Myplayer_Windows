@@ -21,4 +21,7 @@ interface FolderDao {
 
     @Delete
     fun deleteFolder(folder: FolderEntity): Unit
+
+    @Query("DELETE FROM folders")
+    fun clearAllFolders(): Unit
 }

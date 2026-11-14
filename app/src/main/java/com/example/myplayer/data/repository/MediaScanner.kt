@@ -22,9 +22,10 @@ class MediaScanner @Inject constructor(
     private val songDao: SongDao,
     private val folderDao: FolderDao
 ) {
-    private val supportedExtensions = setOf("mp3", "flac", "wav", "m4a", "aac", "ogg", "wma")
+    private val supportedExtensions = setOf("mp3", "flac", "wav", "m4a", "aac", "ogg", "opus", "wma")
 
     suspend fun scanAllFolders() = withContext(Dispatchers.IO) {
+        songDao.clearAllLocalSongs()
         val folders = folderDao.getFoldersSync()
         if (folders.isEmpty()) {
             // Default to user's standard Windows Music directory if no folders configured
@@ -40,14 +41,22 @@ class MediaScanner @Inject constructor(
     }
 
     suspend fun scanFolder(folder: FolderEntity) = withContext(Dispatchers.IO) {
-        val dir = File(folder.uri)
+        val rawUri = folder.uri.trim()
+        val cleanPath = if (rawUri.startsWith("file://")) {
+            runCatching { File(java.net.URI(rawUri)).absolutePath }.getOrElse {
+                android.net.Uri.parse(rawUri).path ?: rawUri.removePrefix("file://")
+            }
+        } else {
+            rawUri
+        }
+        val dir = File(cleanPath)
         if (!dir.exists() || !dir.isDirectory) {
             Log.w("MediaScanner", "Folder does not exist or is not a directory: ${folder.uri}")
             return@withContext
         }
 
         val discoveredSongs = mutableListOf<SongEntity>()
-        scanDirectoryRecursively(dir, discoveredSongs)
+        scanDirectoryDirect(dir, discoveredSongs)
 
         if (discoveredSongs.isNotEmpty()) {
             songDao.insertSongs(discoveredSongs)
@@ -55,12 +64,14 @@ class MediaScanner @Inject constructor(
         }
     }
 
-    private fun scanDirectoryRecursively(dir: File, out: MutableList<SongEntity>) {
+    private fun scanDirectoryDirect(dir: File, out: MutableList<SongEntity>) {
         val files = dir.listFiles() ?: return
+        val targetDir = dir.absolutePath.trimEnd('/', '\\')
         for (file in files) {
-            if (file.isDirectory) {
-                scanDirectoryRecursively(file, out)
-            } else if (file.isFile && file.extension.lowercase() in supportedExtensions) {
+            if (file.isFile && !file.isDirectory &&
+                file.parentFile?.absolutePath?.trimEnd('/', '\\').equals(targetDir, ignoreCase = true) &&
+                file.extension.lowercase() in supportedExtensions
+            ) {
                 out.add(createSongEntityFromFile(file))
             }
         }

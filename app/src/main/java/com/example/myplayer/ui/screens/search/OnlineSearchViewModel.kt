@@ -307,6 +307,34 @@ class OnlineSearchViewModel @Inject constructor(
             downloadRepository.deleteDownloadById(videoId)
         }
     }
+
+    fun exportSongAsFile(song: OnlineSong, formatExt: String = "mp3") {
+        viewModelScope.launch {
+            val extLabel = formatExt.uppercase()
+            _errorMessage.value = "Saving '${song.title}' as .$extLabel to Downloads/MyPlayer..."
+            _isLoadingStream.value = song.videoId + "_dl"
+            try {
+                val url = if (downloadRepository.isDownloaded(song.videoId)) {
+                    song.streamUrl
+                } else {
+                    innertubeApi.getCachedStreamUrl(song.videoId) ?: innertubeApi.getStreamUrl(song.videoId)
+                }
+                val res = downloadRepository.exportSongToDeviceStorage(
+                    song.copy(streamUrl = url),
+                    formatExt = formatExt
+                )
+                res.onSuccess { savedLoc ->
+                    _errorMessage.value = "Saved $extLabel to: $savedLoc"
+                }.onFailure { err ->
+                    _errorMessage.value = "Failed to save $extLabel: ${err.message}"
+                }
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to save $extLabel: ${e.message}"
+            } finally {
+                _isLoadingStream.value = null
+            }
+        }
+    }
 }
 
 

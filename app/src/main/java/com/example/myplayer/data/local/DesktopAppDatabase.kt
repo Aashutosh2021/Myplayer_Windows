@@ -261,6 +261,15 @@ class DesktopAppDatabase : AppDatabase() {
             notifyChange("songs")
         }
 
+        override fun clearAllLocalSongs() {
+            synchronized(connection) {
+                connection.prepareStatement("DELETE FROM songs WHERE path NOT LIKE 'online://%' AND id NOT LIKE 'spotify:%'").use { ps ->
+                    ps.executeUpdate()
+                }
+            }
+            notifyChange("songs")
+        }
+
         override fun getRecentlyAddedSongs(): Flow<List<SongEntity>> = tableFlow("songs") {
             querySongs("SELECT * FROM songs ORDER BY dateAdded DESC LIMIT 50")
         }
@@ -457,9 +466,14 @@ class DesktopAppDatabase : AppDatabase() {
 
         override fun removeSongFromPlaylist(playlistId: Long, songId: String) {
             synchronized(connection) {
-                connection.prepareStatement("DELETE FROM playlist_songs WHERE playlistId = ? AND songId = ?").use { ps ->
+                connection.prepareStatement(
+                    "DELETE FROM playlist_songs WHERE playlistId = ? AND (songId = ? OR songId = 'spotify:' || ? OR songId IN (SELECT id FROM songs WHERE videoId = ? OR path = 'online://' || ?))"
+                ).use { ps ->
                     ps.setLong(1, playlistId)
                     ps.setString(2, songId)
+                    ps.setString(3, songId)
+                    ps.setString(4, songId)
+                    ps.setString(5, songId)
                     ps.executeUpdate()
                 }
             }
@@ -499,15 +513,42 @@ class DesktopAppDatabase : AppDatabase() {
 
         override suspend fun updateSongPosition(playlistId: Long, songId: String, position: Int) {
             synchronized(connection) {
-                connection.prepareStatement("UPDATE playlist_songs SET position = ? WHERE playlistId = ? AND songId = ?").use { ps ->
+                connection.prepareStatement(
+                    "UPDATE playlist_songs SET position = ? WHERE playlistId = ? AND (songId = ? OR songId = 'spotify:' || ? OR songId IN (SELECT id FROM songs WHERE videoId = ? OR path = 'online://' || ?))"
+                ).use { ps ->
                     ps.setInt(1, position)
                     ps.setLong(2, playlistId)
                     ps.setString(3, songId)
+                    ps.setString(4, songId)
+                    ps.setString(5, songId)
+                    ps.setString(6, songId)
                     ps.executeUpdate()
                 }
             }
             notifyChange("playlist_songs")
         }
+
+        override suspend fun reorderPlaylistSongs(playlistId: Long, orderedSongIds: List<String>) {
+            synchronized(connection) {
+                val sql = "UPDATE playlist_songs SET position = ? WHERE playlistId = ? AND (songId = ? OR songId = 'spotify:' || ? OR songId IN (SELECT id FROM songs WHERE videoId = ? OR path = 'online://' || ?))"
+                connection.prepareStatement(sql).use { ps ->
+                    orderedSongIds.forEachIndexed { index, songId ->
+                        ps.setInt(1, index)
+                        ps.setLong(2, playlistId)
+                        ps.setString(3, songId)
+                        ps.setString(4, songId)
+                        ps.setString(5, songId)
+                        ps.setString(6, songId)
+                        ps.addBatch()
+                    }
+                    ps.executeBatch()
+                }
+            }
+            notifyChange("playlist_songs")
+        }
+
+        override fun getAllPlaylistSongs(): Flow<List<PlaylistSongCrossReference>> =
+            tableFlow("playlist_songs") { getAllPlaylistSongsSync() }
 
         override fun getAllPlaylistSongsSync(): List<PlaylistSongCrossReference> = synchronized(connection) {
             connection.createStatement().use { stmt ->
@@ -670,6 +711,15 @@ class DesktopAppDatabase : AppDatabase() {
                 connection.prepareStatement("DELETE FROM folders WHERE uri = ?").use { ps ->
                     ps.setString(1, folder.uri)
                     ps.executeUpdate()
+                }
+            }
+            notifyChange("folders")
+        }
+
+        override fun clearAllFolders() {
+            synchronized(connection) {
+                connection.createStatement().use { stmt ->
+                    stmt.executeUpdate("DELETE FROM folders")
                 }
             }
             notifyChange("folders")

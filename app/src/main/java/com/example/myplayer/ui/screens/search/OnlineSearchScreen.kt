@@ -218,6 +218,7 @@ fun OnlineSearchScreen(
                     onNavigateToNowPlaying()
                 },
                 onDownloadClick = { song -> viewModel.downloadSong(song) },
+                onExportFileClick = { song, fmt -> viewModel.exportSongAsFile(song, fmt) },
                 onAddToPlaylistClick = { song -> songToAddToPlaylist = song },
                 onRemoveDownloadClick = { songToRemoveDownload = it },
                 onAddAllClick = { showAddAllDialog = true },
@@ -611,6 +612,7 @@ fun OnlineResultsList(
     downloadProgress: Map<String, Int>,
     onPlayClick: (OnlineSong, List<OnlineSong>) -> Unit,
     onDownloadClick: (OnlineSong) -> Unit,
+    onExportFileClick: (OnlineSong, String) -> Unit = { _, _ -> },
     onAddToPlaylistClick: (OnlineSong) -> Unit,
     onRemoveDownloadClick: (OnlineSong) -> Unit,
     onAddAllClick: () -> Unit,
@@ -708,6 +710,7 @@ fun OnlineResultsList(
                     onPlayClick(song, contextSongs)
                 },
                 onDownloadClick = { onDownloadClick(song) },
+                onExportFileClick = { fmt -> onExportFileClick(song, fmt) },
                 onAddToPlaylistClick = { onAddToPlaylistClick(song) },
                 onRemoveDownloadClick = { onRemoveDownloadClick(song) }
             )
@@ -737,6 +740,7 @@ fun OnlineSongCard(
     isLinkMatch: Boolean = false,
     onPlayClick: () -> Unit,
     onDownloadClick: () -> Unit,
+    onExportFileClick: (String) -> Unit = {},
     onAddToPlaylistClick: () -> Unit,
     onRemoveDownloadClick: () -> Unit
 ) {
@@ -901,6 +905,32 @@ fun OnlineSongCard(
                             onClick = {
                                 showMenu = false
                                 onAddToPlaylistClick()
+                            }
+                        )
+                        if (!isDownloaded && !isDownloading) {
+                            DropdownMenuItem(
+                                text = { Text("Download Offline (In-App)", color = MaterialTheme.colorScheme.onSurface) },
+                                leadingIcon = { Icon(Icons.Filled.Download, null, tint = ClayPrimary) },
+                                onClick = {
+                                    showMenu = false
+                                    onDownloadClick()
+                                }
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("Download MP3 File (Save to PC)", color = MaterialTheme.colorScheme.onSurface) },
+                            leadingIcon = { Icon(Icons.Filled.AudioFile, null, tint = ClayPrimary) },
+                            onClick = {
+                                showMenu = false
+                                onExportFileClick("mp3")
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Download M4A File (Save to PC)", color = MaterialTheme.colorScheme.onSurface) },
+                            leadingIcon = { Icon(Icons.Filled.SaveAlt, null, tint = ClayPrimary) },
+                            onClick = {
+                                showMenu = false
+                                onExportFileClick("m4a")
                             }
                         )
                         if (isDownloaded) {

@@ -74,7 +74,7 @@ fun LibraryScreen(
             containerColor = MaterialTheme.colorScheme.surface,
             titleContentColor = MaterialTheme.colorScheme.primary,
             textContentColor = MaterialTheme.colorScheme.onSurface,
-            title = { Text("Spotify Import", fontWeight = FontWeight.Bold) },
+            title = { Text("Playlist Import", fontWeight = FontWeight.Bold) },
             text = { Text(msg) },
             confirmButton = {
                 TextButton(onClick = { viewModel.clearImportStatusMessage() }) {
@@ -156,20 +156,39 @@ fun LibraryScreen(
     }
 
     if (showCreatePlaylistDialog) {
-        val isSpotifyInput = newPlaylistName.contains("spotify.com") || newPlaylistName.contains("spotify:playlist") || (newPlaylistName.trim().length == 22 && !newPlaylistName.contains(" "))
+        val trimmedInput = newPlaylistName.trim()
+        val isSpotifyInput = trimmedInput.contains("spotify.com") ||
+            trimmedInput.contains("spotify:playlist") ||
+            (trimmedInput.length == 22 && !trimmedInput.contains(" "))
+        val isYouTubeInput = trimmedInput.contains("youtube.com") ||
+            trimmedInput.contains("youtu.be") ||
+            trimmedInput.contains("list=") ||
+            trimmedInput.startsWith("PL") ||
+            trimmedInput.startsWith("VLPL") ||
+            trimmedInput.startsWith("OLAK5uy_")
+
         AlertDialog(
             onDismissRequest = { showCreatePlaylistDialog = false; newPlaylistName = "" },
             containerColor = MaterialTheme.colorScheme.surface,
             titleContentColor = MaterialTheme.colorScheme.primary,
             textContentColor = MaterialTheme.colorScheme.secondary,
-            title = { Text(if (isSpotifyInput) "Import Spotify Playlist" else "Create or Import Playlist", fontWeight = FontWeight.Bold) },
+            title = {
+                Text(
+                    when {
+                        isYouTubeInput -> "Import YouTube Playlist"
+                        isSpotifyInput -> "Import Spotify Playlist"
+                        else -> "Create or Import Playlist"
+                    },
+                    fontWeight = FontWeight.Bold
+                )
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = newPlaylistName,
                         onValueChange = { newPlaylistName = it },
-                        label = { Text("Playlist name or Spotify playlist link") },
-                        placeholder = { Text("e.g. My Favorites or https://open.spotify.com/playlist/...") },
+                        label = { Text("Playlist name, YouTube link, or Spotify link") },
+                        placeholder = { Text("e.g. My Favorites or https://music.youtube.com/playlist?list=...") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -181,7 +200,7 @@ fun LibraryScreen(
                         )
                     )
                     Text(
-                        text = "Paste any Spotify playlist URL to import all tracks into MyPlayer!",
+                        text = "Tip: Paste any YouTube Music, YouTube, or Spotify playlist URL to import all tracks into MyPlayer!",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.secondary
                     )
@@ -190,18 +209,18 @@ fun LibraryScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val input = newPlaylistName.trim()
-                        if (input.isNotBlank()) {
-                            if (isSpotifyInput) {
-                                viewModel.importSpotifyPlaylist(input) { _, _ -> }
-                            } else {
-                                viewModel.createPlaylist(input)
+                        if (trimmedInput.isNotBlank()) {
+                            when {
+                                isYouTubeInput -> viewModel.importYouTubePlaylist(trimmedInput)
+                                isSpotifyInput -> viewModel.importSpotifyPlaylist(trimmedInput)
+                                else -> viewModel.createPlaylist(trimmedInput)
                             }
-                            newPlaylistName = ""; showCreatePlaylistDialog = false
+                            newPlaylistName = ""
+                            showCreatePlaylistDialog = false
                         }
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)
-                ) { Text(if (isSpotifyInput) "Import" else "Create", fontWeight = FontWeight.Bold) }
+                ) { Text(if (isYouTubeInput || isSpotifyInput) "Import" else "Create", fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
                 TextButton(

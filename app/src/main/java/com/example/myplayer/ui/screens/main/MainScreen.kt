@@ -94,6 +94,7 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) {
         MyPlayerOnboardingFlow(
             myplayerState = myplayerState,
             spotifyManager = homeViewModel.spotifyManager,
+            youtubeManager = homeViewModel.youtubeManager,
             onComplete = { username, selectedArtists ->
                 myplayerState.completeOnboarding(username, selectedArtists)
                 homeViewModel.setUserName(username)

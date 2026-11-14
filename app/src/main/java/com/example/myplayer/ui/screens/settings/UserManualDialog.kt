@@ -48,7 +48,8 @@ fun UserManualDialog(
     onNavigateToAudioLab: (() -> Unit)? = null,
     onNavigateToDualBud: (() -> Unit)? = null,
     onNavigateToSyncPlay: (() -> Unit)? = null,
-    onConnectSpotify: (() -> Unit)? = null
+    onConnectSpotify: (() -> Unit)? = null,
+    onConnectYouTube: (() -> Unit)? = null
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("All") }
@@ -61,7 +62,8 @@ fun UserManualDialog(
         onNavigateToAudioLab,
         onNavigateToDualBud,
         onNavigateToSyncPlay,
-        onConnectSpotify
+        onConnectSpotify,
+        onConnectYouTube
     ) {
         listOf(
             ManualFeature(
@@ -183,6 +185,21 @@ fun UserManualDialog(
                 ),
                 actionLabel = "Connect Spotify",
                 onAction = onConnectSpotify
+            ),
+            ManualFeature(
+                id = "youtube_sync",
+                title = "YouTube Music Login & Playlist Import",
+                category = "Social & Sharing",
+                path = "Settings > YouTube Music & AI Taste > Connect YouTube Music",
+                icon = Icons.Filled.PlayCircleFilled,
+                summary = "Connect your YouTube Music account or paste any YouTube playlist link to import playlists and personalized recommendations.",
+                instructions = listOf(
+                    "One-Tap Web Sign-In: Log in to your Google / YouTube Music account to automatically sync your saved playlists, liked songs, and personalized home mixes.",
+                    "Direct Playlist URL Import: Paste any YouTube or YouTube Music playlist URL in Settings or Library > New Playlist to import all tracks in seconds.",
+                    "AI Taste Fusion: Blends your YouTube Music history and mixes into MyPlayer's 128-D on-device neural recommendation engine."
+                ),
+                actionLabel = "Connect YouTube Music",
+                onAction = onConnectYouTube
             ),
             ManualFeature(
                 id = "offline_downloads",

@@ -359,6 +359,18 @@ object AppContainer {
         val spotifyIntegrationManager = com.example.myplayer.data.spotify.SpotifyIntegrationManager(appContext, aiModel, db.songDao(), db.playlistDao(), db.favoriteDao())
         register(com.example.myplayer.data.spotify.SpotifyIntegrationManager::class.java, spotifyIntegrationManager)
 
+        val youtubeIntegrationManager = com.example.myplayer.data.youtube.YouTubeIntegrationManager(
+            appContext,
+            okHttpClient,
+            stringEncryptionManager,
+            innertubeApi,
+            aiModel,
+            db.songDao(),
+            db.playlistDao(),
+            db.favoriteDao()
+        )
+        register(com.example.myplayer.data.youtube.YouTubeIntegrationManager::class.java, youtubeIntegrationManager)
+
         val meldListenTogetherManager = com.example.myplayer.sync.MeldListenTogetherManager(musicController, syncTrackMatcher, innertubeApi, okHttpClient)
         register(com.example.myplayer.sync.MeldListenTogetherManager::class.java, meldListenTogetherManager)
 

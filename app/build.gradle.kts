@@ -66,7 +66,7 @@ compose.desktop {
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe
             )
             packageName = "MyPlayer"
-            packageVersion = "8.2.3"
+            packageVersion = "8.2.4"
             vendor = "MyPlayer"
             description = "MyPlayer Desktop Audiophile Music Player"
             appResourcesRootDir.set(project.layout.projectDirectory.dir("package-resources"))

@@ -145,6 +145,14 @@ fun SettingsScreen(
 
     var showSpotifyDialog by remember { mutableStateOf(false) }
 
+    val isYouTubeLoggedIn by viewModel.isYouTubeLoggedIn.collectAsStateWithLifecycle()
+
+    val youtubeUsername by viewModel.youtubeUsername.collectAsStateWithLifecycle()
+
+    val isYouTubeSyncing by viewModel.isYouTubeSyncing.collectAsStateWithLifecycle()
+
+    var showYouTubeDialog by remember { mutableStateOf(false) }
+
 
 
     LaunchedEffect(spotifySyncMessage) {
@@ -281,7 +289,9 @@ fun SettingsScreen(
 
             onNavigateToSyncPlay = onNavigateToSyncPlay,
 
-            onConnectSpotify = { showSpotifyDialog = true }
+            onConnectSpotify = { showSpotifyDialog = true },
+
+            onConnectYouTube = { showYouTubeDialog = true }
 
         )
 
@@ -300,6 +310,26 @@ fun SettingsScreen(
             onLoginSuccess = { user ->
 
                 showDialogText = "Connected to Spotify as $user! Taste profile synced into AI recommendations."
+
+            }
+
+        )
+
+    }
+
+
+
+    if (showYouTubeDialog) {
+
+        YouTubeLoginDialog(
+
+            youtubeManager = viewModel.youtubeManager,
+
+            onDismiss = { showYouTubeDialog = false },
+
+            onLoginSuccess = { info ->
+
+                showDialogText = "YouTube Music connected ($info)! Playlists & personalized recommendations synced into AI."
 
             }
 
@@ -1420,7 +1450,7 @@ fun SettingsScreen(
 
                         title = "Connect Spotify",
 
-                        subtitle = "Import your Spotify top tracks & taste profile",
+                        subtitle = "Import your Spotify top tracks, playlists & taste profile",
 
                         onClick = { showSpotifyDialog = true }
 
@@ -1442,6 +1472,28 @@ fun SettingsScreen(
 
                     MyPlayerSettingsNavigationRow(
 
+                        icon = Icons.Filled.Sync,
+
+                        title = if (isSpotifySyncing) "Syncing Spotify Library..." else "Sync Spotify Playlists & Taste Now",
+
+                        subtitle = "Refresh your Spotify playlists, liked songs & AI recommendations",
+
+                        onClick = {
+
+                            if (!isSpotifySyncing) {
+
+                                viewModel.syncSpotify()
+
+                            }
+
+                        }
+
+                    )
+
+                    MyPlayerSettingsDivider()
+
+                    MyPlayerSettingsNavigationRow(
+
                         icon = Icons.Filled.Delete,
 
                         title = "Disconnect Spotify",
@@ -1453,6 +1505,104 @@ fun SettingsScreen(
                             viewModel.logoutSpotify()
 
                             showDialogText = "Disconnected from Spotify."
+
+                        }
+
+                    )
+
+                }
+
+            }
+
+        }
+
+
+
+        // Section: YouTube Music & AI Taste
+
+        item { MyPlayerSectionHeader(title = "YouTube Music & AI Taste") }
+
+        item {
+
+            MyPlayerSettingsCard {
+
+                if (!isYouTubeLoggedIn) {
+
+                    MyPlayerSettingsNavigationRow(
+
+                        icon = Icons.Filled.PlayCircleFilled,
+
+                        title = "Connect YouTube Music",
+
+                        subtitle = "Sign in or paste a playlist link to import YouTube playlists & personalized recommendations",
+
+                        onClick = { showYouTubeDialog = true }
+
+                    )
+
+                } else {
+
+                    MyPlayerSettingsInfoRow(
+
+                        icon = Icons.Filled.CheckCircle,
+
+                        title = "YouTube Music Connected",
+
+                        subtitle = "Logged in as $youtubeUsername • Playlists & AI Recommendations Synced"
+
+                    )
+
+                    MyPlayerSettingsDivider()
+
+                    MyPlayerSettingsNavigationRow(
+
+                        icon = Icons.Filled.Sync,
+
+                        title = if (isYouTubeSyncing) "Syncing YouTube Music..." else "Sync YouTube Playlists & Recommendations",
+
+                        subtitle = "Import your YouTube Music playlists, liked songs & home mix into AI",
+
+                        onClick = {
+
+                            if (!isYouTubeSyncing) {
+
+                                viewModel.syncYouTube()
+
+                            }
+
+                        }
+
+                    )
+
+                    MyPlayerSettingsDivider()
+
+                    MyPlayerSettingsNavigationRow(
+
+                        icon = Icons.Filled.PlaylistAdd,
+
+                        title = "Import YouTube Playlist by Link",
+
+                        subtitle = "Paste any YouTube or YouTube Music playlist URL to import tracks",
+
+                        onClick = { showYouTubeDialog = true }
+
+                    )
+
+                    MyPlayerSettingsDivider()
+
+                    MyPlayerSettingsNavigationRow(
+
+                        icon = Icons.Filled.Delete,
+
+                        title = "Disconnect YouTube Music",
+
+                        subtitle = "Clear YouTube Music session cookies and tokens",
+
+                        onClick = {
+
+                            viewModel.logoutYouTube()
+
+                            showDialogText = "Disconnected from YouTube Music."
 
                         }
 

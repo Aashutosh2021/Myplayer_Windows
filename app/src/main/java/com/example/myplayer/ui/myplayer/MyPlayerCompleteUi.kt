@@ -240,6 +240,7 @@ import com.example.myplayer.data.recommendation.model.RecommendationSong
 
 
 import com.example.myplayer.data.spotify.SpotifyIntegrationManager
+import com.example.myplayer.data.youtube.YouTubeIntegrationManager
 
 
 
@@ -288,6 +289,7 @@ import com.example.myplayer.ui.screens.nowplaying.SleepTimerDialog
 
 
 import com.example.myplayer.ui.screens.settings.SpotifyLoginDialog
+import com.example.myplayer.ui.screens.settings.YouTubeLoginDialog
 
 
 
@@ -2390,77 +2392,29 @@ fun MyPlayerOnboardingFlow(
 
 
     myplayerState: MyPlayerUiStateHolder,
-
-
-
     spotifyManager: SpotifyIntegrationManager? = null,
-
-
-
+    youtubeManager: YouTubeIntegrationManager? = null,
     onComplete: (username: String, selectedArtists: Set<String>) -> Unit
-
-
-
 ) {
-
-
-
     var step by remember { mutableIntStateOf(0) } // 0..5 matching 00:04..00:39
-
-
-
-    // "Yes!" on the import step opens the real Spotify login screen; onboarding
-
-
-
-    // advances to the profile step ONLY after a successful login & account link.
-
-
-
     var showSpotifyLogin by remember { mutableStateOf(false) }
-
-
-
-    // System Back goes to the previous onboarding step instead of closing the whole app.
-
-
-
-    // Gated while the Spotify login dialog is open — the dialog handles its own back.
-
-
-
-    BackHandler(enabled = step in 1..5 && !showSpotifyLogin) { step -= 1 }
-
-
-
-
-
-
+    var showYouTubeLogin by remember { mutableStateOf(false) }
+    BackHandler(enabled = step in 1..5 && !showSpotifyLogin && !showYouTubeLogin) { step -= 1 }
 
     if (showSpotifyLogin && spotifyManager != null) {
-
-
-
         SpotifyLoginDialog(
-
-
-
             spotifyManager = spotifyManager,
-
-
-
             onDismiss = { showSpotifyLogin = false },
-
-
-
             onLoginSuccess = { step = 2 }
-
-
-
         )
+    }
 
-
-
+    if (showYouTubeLogin && youtubeManager != null) {
+        YouTubeLoginDialog(
+            youtubeManager = youtubeManager,
+            onDismiss = { showYouTubeLogin = false },
+            onLoginSuccess = { step = 2 }
+        )
     }
 
 
@@ -3114,49 +3068,22 @@ fun MyPlayerOnboardingFlow(
 
 
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-
-
-
                             MyPlayerPrimaryPillButton(
-
-
-
-                                text = "Yes!",
-
-
-
+                                text = "Connect YouTube Music",
                                 onClick = {
-
-
-
-                                    if (spotifyManager != null) showSpotifyLogin = true else step = 2
-
-
-
+                                    if (youtubeManager != null) showYouTubeLogin = true else step = 2
                                 }
-
-
-
                             )
-
-
-
+                            MyPlayerPrimaryPillButton(
+                                text = "Connect Spotify",
+                                onClick = {
+                                    if (spotifyManager != null) showSpotifyLogin = true else step = 2
+                                }
+                            )
                             MyPlayerSecondaryPillButton(
-
-
-
                                 text = "Skip",
-
-
-
                                 onClick = { step = 2 }
-
-
-
                             )
-
-
-
                         }
 
 

@@ -73,6 +73,33 @@ class OnDeviceMusicAiModel @Inject constructor(
     @Volatile private var cachedRecos: List<RecommendationSong> = emptyList()
     @Volatile private var lastRecoTimeMs: Long = 0L
 
+    // Personalized YouTube Music seeds from authenticated FEmusic_home / Liked / Next endpoints
+    @Volatile private var youtubePersonalizedSeeds: List<OnlineSong> = emptyList()
+
+    /**
+     * Registers live personalized tracks fetched from a logged-in YouTube Music account
+     * (`FEmusic_home`, `FEmusic_liked_videos`, authenticated `next` mixes) and invalidates cache
+     * so the next `generateRecommendations()` call blends them into the top of the Home feed.
+     */
+    @Synchronized
+    fun registerYouTubePersonalizedSeeds(songs: List<OnlineSong>) {
+        if (songs.isEmpty()) return
+        val merged = (songs + youtubePersonalizedSeeds)
+            .filter { it.videoId.isNotBlank() && it.title.isNotBlank() }
+            .distinctBy { it.videoId }
+            .take(60)
+        youtubePersonalizedSeeds = merged
+        cachedRecos = emptyList()
+        lastRecoTimeMs = 0L
+    }
+
+    @Synchronized
+    fun clearYouTubePersonalizedSeeds() {
+        youtubePersonalizedSeeds = emptyList()
+        cachedRecos = emptyList()
+        lastRecoTimeMs = 0L
+    }
+
     /**
      * Call whenever a new song starts playing (online or offline).
      * Automatically evaluates how long the user listened to the PREVIOUS song:
@@ -261,7 +288,7 @@ class OnDeviceMusicAiModel @Inject constructor(
     /**
      * Generates personalized recommendations driven by:
      * 1. User's explicitly selected Artists, Languages & Genres (Spotify-style onboarding)
-     * 2. Spotify-synced seeds & listening history
+     * 2. YouTube Music authenticated personalized shelves & Spotify-synced seeds
      * 3. 128-D Neural Cosine Similarity + Max 2 songs per artist diversification
      */
     suspend fun generateRecommendations(
@@ -341,7 +368,14 @@ class OnDeviceMusicAiModel @Inject constructor(
         fun registerCandidate(song: OnlineSong, graphBonus: Float) {
             if (song.videoId.isBlank()) return
             candidatePool.putIfAbsent(song.videoId, song)
-            graphBonusMap.merge(song.videoId, graphBonus, Float::plus)
+            graphBonusMap[song.videoId] = (graphBonusMap[song.videoId] ?: 0f) + graphBonus
+        }
+
+        // 0. Inject direct personalized YouTube Music recommendations (FEmusic_home / Liked / Next)
+        val ytDirect = youtubePersonalizedSeeds
+        ytDirect.take(25).forEachIndexed { idx, ytSong ->
+            val bonus = (13.0f - idx * 0.25f).coerceAtLeast(6.0f)
+            registerCandidate(ytSong, bonus)
         }
 
         coroutineScope {
@@ -607,7 +641,7 @@ class OnDeviceMusicAiModel @Inject constructor(
             if (song.videoId.isBlank()) return
             candidatePool.putIfAbsent(song.videoId, song)
             // If a song appears in multiple trending charts, its viral score stacks!
-            trendingBonusMap.merge(song.videoId, chartBonus, Float::plus)
+            trendingBonusMap[song.videoId] = (trendingBonusMap[song.videoId] ?: 0f) + chartBonus
         }
 
         coroutineScope {
@@ -679,7 +713,7 @@ class OnDeviceMusicAiModel @Inject constructor(
      */
     fun embedSong(title: String, artist: String, durationMs: Long = 0L): FloatArray {
         val vec = FloatArray(DIM)
-        val cleanTitle = title.lowercase().replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
+        val cleanTitle = title.lowercase().replace(Regex("[^a-z0-9\\s]"), " ")
         val cleanArtist = artist.lowercase().replace(Regex("(?i)-\\s*topic"), "").trim()
 
         projectFeatures(vec, extractNGrams(cleanArtist, 3, 4), weight = 2.8f)
@@ -796,7 +830,7 @@ class OnDeviceMusicAiModel @Inject constructor(
             .sortedByDescending { it.timestamp }
             .take(MAX_HISTORY_ENTRIES)
             .joinToString("\n") {
-                "${it.videoId}\t${it.title.replace(Regex("[\\t\\r\\n]"), " ")}\t${it.artist.replace(Regex("[\\t\\r\\n]"), " ")}\t${it.durationMs}\t${"%.2f".format(Locale.US, it.score)}\t${it.timestamp}"
+                "${it.videoId}\t${it.title.replace(Regex("[\t\r\n]"), " ")}\t${it.artist.replace(Regex("[\t\r\n]"), " ")}\t${it.durationMs}\t${"%.2f".format(Locale.US, it.score)}\t${it.timestamp}"
             }
         prefs.edit().putString("pattern_entries", capped).apply()
     }

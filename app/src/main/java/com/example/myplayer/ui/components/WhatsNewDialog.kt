@@ -47,9 +47,19 @@ object WhatsNewRepository {
 
     fun getCurrentFeatures(): List<WhatsNewFeature> = listOf(
         WhatsNewFeature(
-            icon = Icons.Filled.BugReport,
-            title = "Minor Bugs Fixed",
-            description = "General stability improvements, playback engine optimizations, and minor bug fixes."
+            icon = Icons.Filled.PlayCircleFilled,
+            title = "YouTube Music Login & Account Sync",
+            description = "Sign in with your YouTube / YouTube Music account in Settings to automatically import your saved playlists, liked songs, and listening taste."
+        ),
+        WhatsNewFeature(
+            icon = Icons.Filled.AutoAwesome,
+            title = "Personalized YouTube AI Recommendations",
+            description = "Blends your personal YouTube Music Home mixes, Liked tracks, and live Up-Next radio directly into MyPlayer's 128-D on-device AI recommendation engine."
+        ),
+        WhatsNewFeature(
+            icon = Icons.Filled.PlaylistAdd,
+            title = "One-Tap YouTube & Spotify Playlist Link Import",
+            description = "Paste any YouTube, YouTube Music, or Spotify playlist URL in Library or Settings to import the entire playlist instantly."
         )
     )
 }

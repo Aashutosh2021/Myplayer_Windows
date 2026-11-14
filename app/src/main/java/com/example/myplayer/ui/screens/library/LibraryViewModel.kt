@@ -8,6 +8,7 @@ import com.example.myplayer.data.repository.HybridLibraryRepository
 import com.example.myplayer.data.repository.MusicRepository
 import com.example.myplayer.data.repository.PlayableSong
 import com.example.myplayer.data.spotify.SpotifyIntegrationManager
+import com.example.myplayer.data.youtube.YouTubeIntegrationManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -18,7 +19,8 @@ class LibraryViewModel @Inject constructor(
     private val repository: MusicRepository,
     private val hybridLibraryRepository: HybridLibraryRepository,
     private val downloadRepository: DownloadRepository,
-    val spotifyManager: SpotifyIntegrationManager
+    val spotifyManager: SpotifyIntegrationManager,
+    val youtubeManager: YouTubeIntegrationManager
 ) : ViewModel() {
 
     val playlists: StateFlow<List<PlaylistEntity>> = repository.getAllPlaylists()
@@ -48,7 +50,7 @@ class LibraryViewModel @Inject constructor(
         _importStatusMessage.value = null
     }
 
-    fun importSpotifyPlaylist(urlOrId: String, onResult: (Boolean, String) -> Unit) {
+    fun importSpotifyPlaylist(urlOrId: String, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
         viewModelScope.launch {
             _isImportingSpotify.value = true
             val res = spotifyManager.importPlaylistByUrl(urlOrId)
@@ -59,6 +61,23 @@ class LibraryViewModel @Inject constructor(
                 onResult(true, msg)
             }.onFailure { err ->
                 val msg = "Failed to import playlist: ${err.message ?: "Could not load playlist"}"
+                _importStatusMessage.value = msg
+                onResult(false, msg)
+            }
+        }
+    }
+
+    fun importYouTubePlaylist(urlOrId: String, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch {
+            _isImportingSpotify.value = true
+            val res = youtubeManager.importPlaylistByUrl(urlOrId)
+            _isImportingSpotify.value = false
+            res.onSuccess { (title, count) ->
+                val msg = "Imported '$title' ($count songs) from YouTube!"
+                _importStatusMessage.value = msg
+                onResult(true, msg)
+            }.onFailure { err ->
+                val msg = "Failed to import YouTube playlist: ${err.message ?: "Could not load playlist"}"
                 _importStatusMessage.value = msg
                 onResult(false, msg)
             }

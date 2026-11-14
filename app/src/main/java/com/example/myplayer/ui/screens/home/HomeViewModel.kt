@@ -47,7 +47,8 @@ class HomeViewModel @Inject constructor(
     private val recommendationCache: RecommendationCache,
     private val lastFmRecommendationSource: LastFmRecommendationSource,
     private val aiModel: OnDeviceMusicAiModel,
-    val spotifyManager: com.example.myplayer.data.spotify.SpotifyIntegrationManager
+    val spotifyManager: com.example.myplayer.data.spotify.SpotifyIntegrationManager,
+    val youtubeManager: com.example.myplayer.data.youtube.YouTubeIntegrationManager
 ) : ViewModel() {
 
     private val _userState = MutableStateFlow<RecommendationUserState?>(null)
@@ -58,6 +59,9 @@ class HomeViewModel @Inject constructor(
     val isSpotifyLoggedIn = spotifyManager.isLoggedIn
     val spotifyUsername = spotifyManager.username
     val isSpotifySyncing = spotifyManager.isSyncing
+    val isYouTubeLoggedIn = youtubeManager.isLoggedIn
+    val youtubeUsername = youtubeManager.username
+    val isYouTubeSyncing = youtubeManager.isSyncing
     private var aiTrainingJob: Job? = null
 
     private val _showTasteOnboarding = MutableStateFlow(!aiModel.hasCompletedTasteOnboarding())
@@ -239,12 +243,19 @@ class HomeViewModel @Inject constructor(
             }
         }
 
-        // 3. Background Spotify sync (delayed 4s so it NEVER slows down app startup)
+        // 3. Background Spotify & YouTube Music sync (delayed 4s so it NEVER slows down app startup)
         viewModelScope.launch(Dispatchers.IO) {
             delay(4_000L)
+            var shouldRefresh = false
             if (spotifyManager.isLoggedIn.value) {
-                spotifyManager.syncSpotifyTasteIntoAi()
-                // FIX: Refresh UI immediately after Spotify taste is seeded into AI!
+                runCatching { spotifyManager.syncSpotifyTasteIntoAi() }
+                shouldRefresh = true
+            }
+            if (youtubeManager.isLoggedIn.value) {
+                runCatching { youtubeManager.syncYouTubeTasteIntoAi() }
+                shouldRefresh = true
+            }
+            if (shouldRefresh) {
                 _categoryRecommendations.value = emptyMap()
                 refreshAiRecommendations()
             }
@@ -281,20 +292,32 @@ class HomeViewModel @Inject constructor(
                             durationMs = playedDur
                         )
 
-                        // Wait another 8s (total 12s of listening) before syncing with Spotify
-                        if (spotifyManager.isLoggedIn.value) {
+                        // Wait another 8s (total 12s of listening) before syncing with Spotify / YouTube Music
+                        if (spotifyManager.isLoggedIn.value || youtubeManager.isLoggedIn.value) {
                             delay(8_000L)
                             val stillPlayingSame =
                                 (musicController.currentOnlineSong.value?.title == playedTitle) ||
                                 (musicController.currentSong.value?.title == playedTitle)
 
                             if (stillPlayingSame) {
-                                val newSpotifyRecos = spotifyManager.reportPlayedSongAndFetchSpotifyRecommendations(
-                                    title = playedTitle,
-                                    artist = playedArtist,
-                                    syncToSpotifyLibrary = true
-                                )
-                                if (newSpotifyRecos.isNotEmpty()) {
+                                var updatedRecos = false
+                                if (spotifyManager.isLoggedIn.value) {
+                                    val newSpotifyRecos = spotifyManager.reportPlayedSongAndFetchSpotifyRecommendations(
+                                        title = playedTitle,
+                                        artist = playedArtist,
+                                        syncToSpotifyLibrary = true
+                                    )
+                                    if (newSpotifyRecos.isNotEmpty()) updatedRecos = true
+                                }
+                                if (youtubeManager.isLoggedIn.value) {
+                                    val newYtRecos = youtubeManager.reportPlayedSongAndFetchYouTubeRecommendations(
+                                        videoId = playedId,
+                                        title = playedTitle,
+                                        artist = playedArtist
+                                    )
+                                    if (newYtRecos.isNotEmpty()) updatedRecos = true
+                                }
+                                if (updatedRecos) {
                                     _categoryRecommendations.value = emptyMap()
                                     refreshAiRecommendations()
                                 }
@@ -327,6 +350,18 @@ class HomeViewModel @Inject constructor(
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 Log.e("HomeViewModel", "syncSpotifyTasteAndRefresh failed", e)
+            }
+        }
+    }
+
+    fun syncYouTubeTasteAndRefresh() {
+        viewModelScope.launch {
+            try {
+                youtubeManager.syncYouTubeTasteIntoAi()
+                refreshAiRecommendations()
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Log.e("HomeViewModel", "syncYouTubeTasteAndRefresh failed", e)
             }
         }
     }

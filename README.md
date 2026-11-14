@@ -1,9 +1,9 @@
-# 🎵 MyPlayer for Windows (v6.2)
+# 🎵 MyPlayer for Windows (v8.2.3)
 
 <div align="center">
 
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?style=for-the-badge&logo=windows&logoColor=white)
-![Version](https://img.shields.io/badge/Version-v6.2-brightgreen?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-v8.2.3-brightgreen?style=for-the-badge)
 ![Kotlin](https://img.shields.io/badge/Kotlin-100%25-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)
 ![Compose Multiplatform](https://img.shields.io/badge/UI-Compose%20Multiplatform-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)
 ![Audio Engine](https://img.shields.io/badge/Audio-JavaSound%20%2B%20VLCJ-E95420?style=for-the-badge)
@@ -12,6 +12,19 @@
 
 <p align="center">
   <b>A modern, high-performance Windows desktop music player built with Compose Multiplatform. Features custom native branding, an interactive installer with desktop shortcut prompt, direct hardware-accelerated 48kHz PCM audio, YouTube link search, synchronized lyrics, dark/light themes, and DualBud mode for split-earbud playback.</b>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Aashutosh2021/Myplayer_Windows/releases/latest">
+    <img src="https://img.shields.io/badge/Download-Windows%20(v8.2.3)-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Download Windows Release" />
+  </a>
+  <a href="https://github.com/Aashutosh2021/MyPlayer_Android">
+    <img src="https://img.shields.io/badge/Android%20Mobile-MyPlayer%20v6.5-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="MyPlayer for Android" />
+  </a>
+</p>
+
+<p align="center">
+  Looking for mobile? Check out <a href="https://github.com/Aashutosh2021/MyPlayer_Android"><b>MyPlayer for Android</b></a> (<a href="https://github.com/Aashutosh2021/MyPlayer_Android/releases/latest">Latest APK Release</a>).
 </p>
 
 </div>
@@ -170,14 +183,14 @@ MyPlayer_Windows/
   .\gradlew.bat :app:packageMsi
   ```
   The installer `.msi` will be output to:
-  `app\build\compose\binaries\main\msi\MyPlayer-6.2.0.msi`
+  `app\build\compose\binaries\main\msi\MyPlayer-8.2.3.msi`
 
 - **Build Windows Executable Installer**:
   ```bash
   .\gradlew.bat :app:packageExe
   ```
   The installer `.exe` will be output to:
-  `app\build\compose\binaries\main\exe\MyPlayer-6.2.0.exe`
+  `app\build\compose\binaries\main\exe\MyPlayer-8.2.3.exe`
 
 ---
 

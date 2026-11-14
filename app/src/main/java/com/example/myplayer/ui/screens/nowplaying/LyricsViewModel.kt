@@ -2,16 +2,17 @@ package com.example.myplayer.ui.screens.nowplaying
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.myplayer.data.lyrics.DetectedScript
 import com.example.myplayer.data.lyrics.LyricsRepository
 import com.example.myplayer.data.lyrics.LyricsResult
 import com.example.myplayer.data.lyrics.LyricsScript
 import com.example.myplayer.data.lyrics.LyricsScriptConverter
 import com.example.myplayer.playback.MusicController
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 sealed class LyricsUiState {
@@ -34,7 +35,6 @@ data class LyricsMetadata(
 @HiltViewModel
 class LyricsViewModel @Inject constructor(
     private val lyricsRepository: LyricsRepository,
-    private val scriptConverter: LyricsScriptConverter,
     private val musicController: MusicController,
     private val audioPlaybackStore: com.example.myplayer.data.preferences.AudioPlaybackStore
 ) : ViewModel() {
@@ -43,8 +43,8 @@ class LyricsViewModel @Inject constructor(
 
     private val _scriptMode = MutableStateFlow(LyricsScript.ORIGINAL)
     val scriptMode: StateFlow<LyricsScript> = _scriptMode.asStateFlow()
-    private val _detectedScript = MutableStateFlow(DetectedScript.UNKNOWN)
-    val detectedScript: StateFlow<DetectedScript> = _detectedScript.asStateFlow()
+    private val _canConvertScript = MutableStateFlow(false)
+    val canConvertScript: StateFlow<Boolean> = _canConvertScript.asStateFlow()
     private val _converting = MutableStateFlow(false)
     val converting: StateFlow<Boolean> = _converting.asStateFlow()
 
@@ -56,17 +56,19 @@ class LyricsViewModel @Inject constructor(
 
     private suspend fun applyScript(raw: LyricsUiState, mode: LyricsScript): LyricsUiState {
         if (raw !is LyricsUiState.Found) {
-            _detectedScript.value = DetectedScript.UNKNOWN
+            _canConvertScript.value = false
             return raw
         }
         val synced = raw.syncedLines
         val lines = if (synced.isNotEmpty()) synced.map { it.second } else (raw.result.plainLyrics ?: "").lines()
-        val from = scriptConverter.detect(lines)
-        _detectedScript.value = from
-        if (mode == LyricsScript.ORIGINAL || !from.convertible) return raw
+        val convertible = LyricsScriptConverter.supportsIndianScripts(lines.joinToString("\n"))
+        _canConvertScript.value = convertible
+        if (mode == LyricsScript.ORIGINAL || !convertible) return raw
         _converting.value = true
         try {
-            val out = scriptConverter.convert(lines, from, mode)
+            val out = withContext(Dispatchers.IO) {
+                LyricsScriptConverter.convertBlock(lines, mode)
+            }
             return if (synced.isNotEmpty()) {
                 raw.copy(syncedLines = synced.mapIndexed { i, (t, _) -> t to (out.getOrNull(i) ?: "") })
             } else {

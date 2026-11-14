@@ -17,7 +17,7 @@ object ThemeManager {
             return hour < 6 || hour >= 18
         }
 
-    var isDarkMode by mutableStateOf(isNightTime)
+    var isDarkMode by mutableStateOf(true)
     val isDark: Boolean get() = isDarkMode
     var onThemeChanged: ((Boolean) -> Unit)? = null
 

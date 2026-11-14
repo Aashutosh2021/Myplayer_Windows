@@ -31,6 +31,8 @@ object AppContainer {
 
     @Volatile private var masterAudioState = com.example.myplayer.data.preferences.AudioPlaybackState()
     @Volatile private var masterLegacyPreampDb: Float = 0f
+    @Volatile private var isInitialized: Boolean = false
+    private val initLock = Any()
 
     private fun applyMasterDsp() {
         val preampDb = if (masterAudioState.loudnessMode != com.example.myplayer.data.preferences.LoudnessMode.OFF) {
@@ -52,7 +54,10 @@ object AppContainer {
     }
 
     fun initialize() {
-        println("[AppContainer] Initializing desktop dependencies...")
+        if (isInitialized) return
+        synchronized(initLock) {
+            if (isInitialized) return
+            println("[AppContainer] Initializing desktop dependencies...")
 
         val appContext = Context()
         register(Context::class.java, appContext)
@@ -382,15 +387,19 @@ object AppContainer {
         val hybridLibraryRepository = com.example.myplayer.data.repository.HybridLibraryRepository(db.downloadedSongDao(), db.songDao())
         register(com.example.myplayer.data.repository.HybridLibraryRepository::class.java, hybridLibraryRepository)
 
-        RedownloadQueueWorker.resumeIfPending(appContext)
-
+        // Kick off audio engine & pending redownload queue asynchronously on Dispatchers.IO
         try {
             com.example.myplayer.playback.DesktopAudioBackend.init()
         } catch (e: Throwable) {
             println("[AppContainer] Warning initializing audio: ${e.message}")
         }
+        scope.launch {
+            runCatching { RedownloadQueueWorker.resumeIfPending(appContext) }
+        }
 
+        isInitialized = true
         println("[AppContainer] Desktop dependencies initialized.")
+        }
     }
 
     fun cleanup() {

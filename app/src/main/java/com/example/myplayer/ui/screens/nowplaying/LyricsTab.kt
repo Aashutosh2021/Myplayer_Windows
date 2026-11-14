@@ -393,8 +393,8 @@ private fun PlainLyricsView(text: String) {
 /** Original / Hinglish / हिन्दी / اردو chips; hidden for English lyrics. */
 @Composable
 private fun LyricsScriptPicker(modifier: Modifier = Modifier, viewModel: LyricsViewModel = hiltViewModel()) {
-    val detected by viewModel.detectedScript.collectAsStateWithLifecycle()
-    if (!detected.convertible) return
+    val canConvert by viewModel.canConvertScript.collectAsStateWithLifecycle()
+    if (!canConvert) return
     val mode by viewModel.scriptMode.collectAsStateWithLifecycle()
     val converting by viewModel.converting.collectAsStateWithLifecycle()
     val isDark = ThemeState.isDarkMode

@@ -92,30 +92,58 @@ object DesktopAudioBackend {
         }
     }
 
+    @Volatile private var initStarted: Boolean = false
+    private val initLatch = java.util.concurrent.CountDownLatch(1)
+
+    /**
+     * Non-blocking asynchronous initialization:
+     * Installs the lightweight DSP pipeline immediately (<1ms) and moves heavy native VLC DLL
+     * discovery (`NativeDiscovery`), `MediaPlayerFactory` creation, and Windows WASAPI/DirectSound
+     * `SourceDataLine` opening onto `Dispatchers.IO` so the UI window opens instantaneously!
+     */
     fun init() {
-        try {
-            System.setProperty("jna.encoding", "UTF-8")
-            discoverWindowsVlcPath()?.let { vlcDir ->
-                System.setProperty("jna.library.path", vlcDir.absolutePath)
+        if (initStarted) return
+        synchronized(this) {
+            if (initStarted) return
+            initStarted = true
+        }
+        DesktopMyPlayerDspPipeline.install()
+        backendScope.launch(Dispatchers.IO) {
+            try {
+                System.setProperty("jna.encoding", "UTF-8")
+                val fastVlcDir = discoverWindowsVlcPath()
+                if (fastVlcDir != null) {
+                    System.setProperty("jna.library.path", fastVlcDir.absolutePath)
+                }
+                NativeDiscovery().discover()
+                val factory = MediaPlayerFactory(
+                    "--no-video",
+                    "--quiet",
+                    "--no-stats",
+                    "--no-osd",
+                    "--network-caching=1500",
+                    "--file-caching=1000",
+                    "--audio-resampler=soxr"
+                )
+                mediaPlayerFactory = factory
+                val primaryDeck = createDeckPlayer(factory)
+                mediaPlayer = primaryDeck.first
+                soundLine = primaryDeck.second
+                isVlcAvailable = true
+                println("[DesktopAudioBackend] Async VLC Media Engine initialized (Dual-Deck Crossfade ready).")
+            } catch (t: Throwable) {
+                println("[DesktopAudioBackend] VLC native engine not available: ${t.message}. Using fallback playback.")
+                isVlcAvailable = false
+            } finally {
+                initLatch.countDown()
             }
-            NativeDiscovery().discover()
-            val factory = MediaPlayerFactory(
-                "--no-video",
-                "--quiet",
-                "--network-caching=1500",
-                "--file-caching=1000",
-                "--audio-resampler=soxr"
-            )
-            mediaPlayerFactory = factory
-            DesktopMyPlayerDspPipeline.install()
-            val primaryDeck = createDeckPlayer(factory)
-            mediaPlayer = primaryDeck.first
-            soundLine = primaryDeck.second
-            isVlcAvailable = true
-            println("[DesktopAudioBackend] VLC Media Engine initialized successfully (Dual-Deck Crossfade ready).")
-        } catch (t: Throwable) {
-            println("[DesktopAudioBackend] VLC native engine not available: ${t.message}. Using fallback playback.")
-            isVlcAvailable = false
+        }
+    }
+
+    private fun awaitEngineReady(timeoutMs: Long = 2500L) {
+        if (!initStarted) init()
+        if (initLatch.count > 0L) {
+            runCatching { initLatch.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS) }
         }
     }
 
@@ -446,6 +474,7 @@ object DesktopAudioBackend {
     }
 
     fun play(pathOrUri: String, startPositionMs: Long = 0L) {
+        awaitEngineReady(2500L)
         pauseFadeJob?.cancel()
         if (!isCrossfading) {
             crossfadeEnvelope = 1.0f

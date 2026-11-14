@@ -32,8 +32,17 @@ fun main() {
     System.setProperty("sun.java2d.uiScale.enabled", "true")
     System.setProperty("sun.java2d.dpiaware", "true")
 
+    // Start initializing AppContainer on a high-priority bootstrap thread concurrently
+    // while Compose/Skiko initializes the native OS window so the window opens immediately.
+    val bootstrapThread = Thread({
+        runCatching { AppContainer.initialize() }
+    }, "MyPlayer-FastBootstrap").apply {
+        isDaemon = true
+        priority = Thread.MAX_PRIORITY
+        start()
+    }
+
     application {
-        AppContainer.initialize()
         Window(
             onCloseRequest = {
                 try {
@@ -46,6 +55,13 @@ fun main() {
             icon = painterResource(R.drawable.app_icon_spark),
             state = rememberWindowState(width = 1200.dp, height = 800.dp)
         ) {
+            // Ensure fast non-blocking DI graph is ready before first composition frame
+            remember {
+                runCatching { bootstrapThread.join(1500L) }
+                AppContainer.initialize()
+                true
+            }
+
             val density = LocalDensity.current
             CompositionLocalProvider(
                 LocalDensity provides Density(
@@ -56,12 +72,11 @@ fun main() {
                 MyPlayerTheme {
                     MainScreen()
 
-                    // Startup "What's New" changelog (ported from Android MainActivity.onCreate):
-                    // shows once per app version, then marks itself seen via SharedPreferences.
                     val context = LocalContext.current
 
-                    // Remote Push Notifications Background Poller:
+                    // Remote Push Notifications Background Poller (delayed slightly so UI renders first):
                     LaunchedEffect(Unit) {
+                        delay(1_500L)
                         MyPlayerRemoteNotificationManager.startAutoPolling(context)
                     }
 
@@ -77,7 +92,6 @@ fun main() {
                         )
                     }
 
-                    // Remote notification in-app popup dialog:
                     val remotePopup = MyPlayerRemoteNotificationManager.activeRemotePopup
                     if (remotePopup != null && !showWhatsNew && availableUpdate == null) {
                         MyPlayerRemoteNotificationPopupDialog(
@@ -89,7 +103,7 @@ fun main() {
 
                     // Automatic Background Update Checker for Windows Desktop:
                     LaunchedEffect(Unit) {
-                        delay(4_000)
+                        delay(4_000L)
                         while (isActive) {
                             try {
                                 val updateChecker = AppContainer.get(UpdateChecker::class.java)
@@ -98,7 +112,7 @@ fun main() {
                                     availableUpdate = update
                                 }
                             } catch (_: Throwable) {}
-                            delay(6 * 3600 * 1000L) // Re-check every 6 hours while running
+                            delay(6 * 3600 * 1000L)
                         }
                     }
 

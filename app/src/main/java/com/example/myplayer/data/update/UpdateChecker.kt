@@ -139,7 +139,13 @@ class UpdateChecker @Inject constructor(
                 val releaseHtmlUrl = json.optString("html_url", defaultUrl)
                 val displayName = releaseName.ifBlank { "v$remoteVersion" }
 
-                if (!isNewerVersion(remoteVersion, BuildConfig.VERSION_NAME)) {
+                val jpackageVersion = System.getProperty("jpackage.app-version").orEmpty()
+                val localVersion = if (jpackageVersion.isNotBlank() && isNewerVersion(jpackageVersion, BuildConfig.VERSION_NAME)) {
+                    jpackageVersion
+                } else {
+                    BuildConfig.VERSION_NAME
+                }
+                if (!isNewerVersion(remoteVersion, localVersion)) {
                     return@withContext null
                 }
 

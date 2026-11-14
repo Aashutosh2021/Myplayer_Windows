@@ -884,7 +884,7 @@ fun SettingsScreen(
 
                     Text(
 
-                        "You're using the latest version of MyPlayer (v${com.example.myplayer.BuildConfig.VERSION_NAME}).",
+                        "You're using the latest version of MyPlayer (v${com.example.myplayer.BuildConfig.VERSION_NAME.removePrefix("v").removePrefix("V")}).",
 
                         color = MaterialTheme.colorScheme.onSurfaceVariant
 
@@ -1191,7 +1191,7 @@ fun SettingsScreen(
 
                             Text(
 
-                                text = "v${com.example.myplayer.BuildConfig.VERSION_NAME}",
+                                text = "v${com.example.myplayer.BuildConfig.VERSION_NAME.removePrefix("v").removePrefix("V")}",
 
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
 
@@ -1642,7 +1642,7 @@ fun SettingsScreen(
 
                             recipient = DEVELOPER_EMAIL,
 
-                            subject = "[MyPlayer Complaint / Bug Report] v${com.example.myplayer.BuildConfig.VERSION_NAME}",
+                            subject = "[MyPlayer Complaint / Bug Report] v${com.example.myplayer.BuildConfig.VERSION_NAME.removePrefix("v").removePrefix("V")}",
 
                             body = """
 
@@ -1728,7 +1728,7 @@ fun SettingsScreen(
 
                     icon = Icons.Filled.Info,
 
-                    title = "What's New in v${com.example.myplayer.BuildConfig.VERSION_NAME}",
+                    title = "What's New in v${com.example.myplayer.BuildConfig.VERSION_NAME.removePrefix("v").removePrefix("V")}",
 
                     subtitle = "See new features and improvements in this release",
 

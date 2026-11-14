@@ -105,7 +105,10 @@ fun main() {
                     if (!showWhatsNew && availableUpdate != null) {
                         val update = availableUpdate!!
                         AlertDialog(
-                            onDismissRequest = { availableUpdate = null },
+                            onDismissRequest = {
+                                AppContainer.get(UpdateChecker::class.java)?.markNotified(update)
+                                availableUpdate = null
+                            },
                             containerColor = MaterialTheme.colorScheme.surface,
                             titleContentColor = MaterialTheme.colorScheme.onSurface,
                             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,

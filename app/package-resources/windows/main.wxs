@@ -1,12 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Wix 
-  
-  
-  xmlns="http://schemas.microsoft.com/wix/2006/wi"
-     
-  
-  
-  xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
+     xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
   <?ifdef JpIsSystemWide ?>
   <?define JpInstallScope="perMachine"?>
   <?else?>
@@ -17,14 +11,14 @@
   <?define JpCompressedMsi=yes ?>
   <?include $(var.JpConfigDir)/overrides.wxi ?>
   <!--
-    Id="*" generates a fresh ProductCode GUID on every build.
-    Combined with IncludeMaximum="yes" on UpgradeVersion and our custom MyPlayerMaintenanceDlg,
-    whenever MyPlayer is already installed (same version or older version), the installer
-    automatically presents:
-      (1) Update MyPlayer
-      (2) Repair MyPlayer
-      (3) Uninstall MyPlayer
-    plus the [x] Create Desktop Icon checkbox!
+    PERMANENT FIX FOR .MSI & .EXE INSTALLER ERROR 1638:
+    1. Product Id="*" and Package Id="*" generate fresh GUIDs on every single build so two builds
+       (.msi or .exe) NEVER collide on ProductCode with different PackageCodes.
+    2. Global REINSTALLMODE is NOT set in the Property table (only set to "vomus"/"vecmus" with 'v'
+       during same-MSI maintenance mode), preventing Error 1638 package-code rejection.
+    3. Single UpgradeVersion (0.0.0.0 .. 255.255.65535.65535) with IgnoreRemoveFailure="yes" plus
+       JpAutoRemoveExistingForUpgrade in InstallUISequence cleanly upgrades/replaces any existing
+       installation across all versions (6.5, 6.6, 8.2, 8.6+) and across perUser/perMachine scopes.
   -->
   <Product
     Id="*"
@@ -34,6 +28,7 @@
     Manufacturer="$(var.JpAppVendor)"
     UpgradeCode="$(var.JpProductUpgradeCode)">
     <Package
+      Id="*"
       Description="$(var.JpAppDescription)"
       Manufacturer="$(var.JpAppVendor)"
       InstallerVersion="$(var.JpInstallerVersion)"
@@ -47,11 +42,9 @@
     <!--
       MSIFASTINSTALL="7" skips Windows System Restore point creation and redundant costing,
       cutting installer execution time from ~30s down to ~3s.
-      REINSTALLMODE="omus" only overwrites older/missing files instead of slow unconditional 'amus'.
     -->
     <Property Id="MSIFASTINSTALL" Value="7" />
     <Property Id="DISABLEROLLBACK" Value="1" />
-    <Property Id="REINSTALLMODE" Value="omus" />
     <!-- Upgrade & Maintenance state properties preserved across UAC elevation -->
     <Property Id="JP_UPGRADABLE_FOUND" Secure="yes" />
     <Property Id="JP_DOWNGRADABLE_FOUND" Secure="yes" />
@@ -60,22 +53,16 @@
     <Property Id="MYPLAYER_MAINT_MODE" Value="Update" Secure="yes" />
     <Property Id="ErrorDialog" Value="MyPlayerErrorDlg" />
     <Upgrade Id="$(var.JpProductUpgradeCode)">
-      <!-- Matches any installed version <= current version -->
+      <!-- Matches ANY installed version (older, same version, or higher version) so it never blocks -->
       <UpgradeVersion
         OnlyDetect="no"
         Property="JP_UPGRADABLE_FOUND"
         Minimum="0.0.0.0"
         IncludeMinimum="yes"
-        Maximum="$(var.JpAppVersion)"
+        Maximum="255.255.65535.65535"
         IncludeMaximum="yes"
-        MigrateFeatures="yes" />
-      <!-- Matches any newer version for downgrade handling -->
-      <UpgradeVersion
-        OnlyDetect="no"
-        Property="JP_DOWNGRADABLE_FOUND"
-        Minimum="$(var.JpAppVersion)"
-        IncludeMinimum="no"
-        MigrateFeatures="yes" />
+        MigrateFeatures="yes"
+        IgnoreRemoveFailure="yes" />
     </Upgrade>
     <Binary Id="JpCaDll" SourceFile="wixhelper.dll"/>
     <CustomAction Id="JpFindRelatedProducts" BinaryKey="JpCaDll" DllEntry="FindRelatedProductsEx" />
@@ -86,11 +73,18 @@
       ExeCommand="cmd.exe /c &quot;taskkill /F /IM MyPlayer.exe /T &gt;nul 2&gt;&amp;1 &amp; exit /b 0&quot;"
       Execute="immediate"
       Return="ignore" />
+    <!-- Pre-clean any existing perUser or perMachine installation during Update/Repair before ExecuteAction starts -->
+    <CustomAction
+      Id="JpAutoRemoveExistingForUpgrade"
+      Directory="TARGETDIR"
+      ExeCommand="cmd.exe /c &quot;for %i in ([JP_UPGRADABLE_FOUND]) do msiexec.exe /x %i /qn /norestart &gt;nul 2&gt;&amp;1 &amp; exit /b 0&quot;"
+      Execute="immediate"
+      Return="ignore" />
     <!-- If user selected 'Uninstall' on a newly built installer where JP_UPGRADABLE_FOUND is set -->
     <CustomAction
       Id="JpUninstallExistingViaMsiExec"
       Directory="TARGETDIR"
-      ExeCommand="msiexec.exe /x [JP_UPGRADABLE_FOUND] /qb!"
+      ExeCommand="cmd.exe /c &quot;for %i in ([JP_UPGRADABLE_FOUND]) do msiexec.exe /x %i /qb! /norestart &gt;nul 2&gt;&amp;1 &amp; del /F /Q &quot;%USERPROFILE%\Desktop\MyPlayer.lnk&quot; &gt;nul 2&gt;&amp;1 &amp; del /F /Q &quot;%PUBLIC%\Desktop\MyPlayer.lnk&quot; &gt;nul 2&gt;&amp;1 &amp; exit /b 0&quot;"
       Execute="immediate"
       Return="ignore" />
     <!-- Creates Desktop Shortcut (MyPlayer.lnk) when 'Create Desktop Icon' is checked -->
@@ -135,7 +129,6 @@
     <?endif?>
     <!-- ═══════════════════════════════════════════════════════════════════════════
          CUSTOM MYPLAYER INSTALLER & MAINTENANCE UI (Update / Repair / Uninstall + Desktop Icon)
-         Replaces jpackage's barebones JpUI popup with a full interactive wizard!
          ═══════════════════════════════════════════════════════════════════════════ -->
     <UI Id="MyPlayerSetupUI">
       <UIRef Id="WixUI_Common" />
@@ -153,7 +146,7 @@
         <Control Id="BannerTitle" Type="Text" X="20" Y="18" Width="330" Height="24" Transparent="yes" NoPrefix="yes"
                  Text="{\WixUI_Font_Bigger}Welcome to $(var.JpAppName) $(var.JpAppVersion) Setup" />
         <Control Id="BannerSub" Type="Text" X="20" Y="46" Width="330" Height="32" Transparent="yes" NoPrefix="yes"
-                 Text="High-Resolution Desktop Audiophile Music Player with 10-Band Rainbow EQ, Real-Time Audio FX Lab, Sync Play, and 6 Customizable Player Styles." />
+                 Text="High-Resolution Desktop Audiophile Music Player with 10-Band Rainbow EQ, Real-Time Audio FX Lab, YouTube &amp; Spotify Sync, and 6 Player Styles." />
         <Control Id="TopLine" Type="Line" X="0" Y="84" Width="370" Height="0" />
         <Control Id="InstallInfoText" Type="Text" X="24" Y="102" Width="320" Height="28" Transparent="yes" NoPrefix="yes"
                  Text="Click Install Now to install $(var.JpAppName) on your computer. Select your shortcut preference below:" />
@@ -200,18 +193,21 @@
           <Publish Property="CREATE_DESKTOP_ICON">NOT MAINT_DESKTOP_ICON OR MYPLAYER_MAINT_MODE = "Uninstall"</Publish>
           <Publish Property="JP_INSTALL_DESKTOP_SHORTCUT" Value="1">MAINT_DESKTOP_ICON = "1" AND MYPLAYER_MAINT_MODE &lt;&gt; "Uninstall"</Publish>
           <Publish Property="JP_INSTALL_DESKTOP_SHORTCUT">NOT MAINT_DESKTOP_ICON OR MYPLAYER_MAINT_MODE = "Uninstall"</Publish>
-          <!-- Mode 1: UPDATE -->
-          <Publish Property="REINSTALLMODE" Value="omus">MYPLAYER_MAINT_MODE = "Update"</Publish>
+          <!-- Mode 1: UPDATE (when re-running exact same MSI, use 'vomus' with 'v' to recache package) -->
+          <Publish Property="REINSTALLMODE" Value="vomus">Installed AND MYPLAYER_MAINT_MODE = "Update"</Publish>
           <Publish Property="REINSTALL" Value="ALL">Installed AND MYPLAYER_MAINT_MODE = "Update"</Publish>
-          <!-- Mode 2: REPAIR -->
-          <Publish Property="REINSTALLMODE" Value="ecmus">MYPLAYER_MAINT_MODE = "Repair"</Publish>
+          <!-- Mode 2: REPAIR (when re-running exact same MSI, use 'vecmus' with 'v') -->
+          <Publish Property="REINSTALLMODE" Value="vecmus">Installed AND MYPLAYER_MAINT_MODE = "Repair"</Publish>
           <Publish Property="REINSTALL" Value="ALL">Installed AND MYPLAYER_MAINT_MODE = "Repair"</Publish>
+          <!-- Mode 1b & 2b: UPDATE / REPAIR from a new MSI/EXE build over existing installation -->
+          <Publish Event="DoAction" Value="JpCloseRunningApp">NOT Installed AND (JP_UPGRADABLE_FOUND OR JP_DOWNGRADABLE_FOUND) AND MYPLAYER_MAINT_MODE &lt;&gt; "Uninstall"</Publish>
+          <Publish Event="DoAction" Value="JpAutoRemoveExistingForUpgrade">NOT Installed AND (JP_UPGRADABLE_FOUND OR JP_DOWNGRADABLE_FOUND) AND MYPLAYER_MAINT_MODE &lt;&gt; "Uninstall"</Publish>
           <!-- Mode 3: UNINSTALL (Same MSI ProductCode) -->
           <Publish Property="REMOVE" Value="ALL">Installed AND MYPLAYER_MAINT_MODE = "Uninstall"</Publish>
-          <!-- Mode 3b: UNINSTALL (New MSI build over existing install via JP_UPGRADABLE_FOUND) -->
-          <Publish Event="DoAction" Value="JpCloseRunningApp">NOT Installed AND JP_UPGRADABLE_FOUND AND MYPLAYER_MAINT_MODE = "Uninstall"</Publish>
-          <Publish Event="DoAction" Value="JpUninstallExistingViaMsiExec">NOT Installed AND JP_UPGRADABLE_FOUND AND MYPLAYER_MAINT_MODE = "Uninstall"</Publish>
-          <Publish Event="EndDialog" Value="Exit">NOT Installed AND JP_UPGRADABLE_FOUND AND MYPLAYER_MAINT_MODE = "Uninstall"</Publish>
+          <!-- Mode 3b: UNINSTALL (New MSI/EXE build over existing install via JP_UPGRADABLE_FOUND) -->
+          <Publish Event="DoAction" Value="JpCloseRunningApp">NOT Installed AND (JP_UPGRADABLE_FOUND OR JP_DOWNGRADABLE_FOUND) AND MYPLAYER_MAINT_MODE = "Uninstall"</Publish>
+          <Publish Event="DoAction" Value="JpUninstallExistingViaMsiExec">NOT Installed AND (JP_UPGRADABLE_FOUND OR JP_DOWNGRADABLE_FOUND) AND MYPLAYER_MAINT_MODE = "Uninstall"</Publish>
+          <Publish Event="EndDialog" Value="Exit">NOT Installed AND (JP_UPGRADABLE_FOUND OR JP_DOWNGRADABLE_FOUND) AND MYPLAYER_MAINT_MODE = "Uninstall"</Publish>
           <!-- Proceed to execute install/update/repair/same-MSI-uninstall -->
           <Publish Event="EndDialog" Value="Return">Installed OR MYPLAYER_MAINT_MODE &lt;&gt; "Uninstall"</Publish>
         </Control>
@@ -309,9 +305,9 @@
       <InstallUISequence>
         <Custom Action="JpFindRelatedProducts" After="FindRelatedProducts"/>
         <!-- Show Fresh Install Dialog when MyPlayer is NOT yet installed -->
-        <Show Dialog="MyPlayerInstallDlg" Before="MyPlayerProgressDlg">NOT Installed AND NOT JP_UPGRADABLE_FOUND</Show>
+        <Show Dialog="MyPlayerInstallDlg" Before="MyPlayerProgressDlg">NOT Installed AND NOT JP_UPGRADABLE_FOUND AND NOT JP_DOWNGRADABLE_FOUND</Show>
         <!-- Show Update / Repair / Uninstall Maintenance Dialog when MyPlayer IS already installed -->
-        <Show Dialog="MyPlayerMaintenanceDlg" Before="MyPlayerProgressDlg">Installed OR JP_UPGRADABLE_FOUND</Show>
+        <Show Dialog="MyPlayerMaintenanceDlg" Before="MyPlayerProgressDlg">Installed OR JP_UPGRADABLE_FOUND OR JP_DOWNGRADABLE_FOUND</Show>
         <Show Dialog="MyPlayerProgressDlg" Before="ExecuteAction" />
         <Show Dialog="MyPlayerExitDlg" OnExit="success" />
         <Show Dialog="MyPlayerUserExitDlg" OnExit="cancel" />

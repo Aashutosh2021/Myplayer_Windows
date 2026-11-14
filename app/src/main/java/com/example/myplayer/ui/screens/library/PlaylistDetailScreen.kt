@@ -113,10 +113,13 @@ fun PlaylistDetailScreen(
     val itemSpacingPx = with(LocalDensity.current) { 12.dp.toPx() }
     val defaultItemStridePx = with(LocalDensity.current) { 82.dp.toPx() }
 
-    var localSongs by remember { mutableStateOf(songs) }
-    
+    var localSongs by remember(playlistId) { mutableStateOf(songs) }
+    if (draggedSongId == null && !isSavingOrder && localSongs != songs) {
+        localSongs = songs
+    }
+
     // Sync localSongs with DB songs only when not dragging or saving reorder
-    LaunchedEffect(songs) {
+    LaunchedEffect(songs, draggedSongId, isSavingOrder) {
         if (draggedSongId == null && !isSavingOrder) {
             localSongs = songs
         }

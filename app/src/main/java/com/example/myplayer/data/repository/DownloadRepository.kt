@@ -286,11 +286,27 @@ class DownloadRepository @Inject constructor(
                 downloadedSongDao.insert(entity)
 
                 try {
-                    songDao.getSongById(song.videoId)?.let {
-                        songDao.updateSongPath(song.videoId, destFile.absolutePath)
+                    val existing = songDao.getSongById(song.videoId) ?: songDao.getSongByVideoId(song.videoId)
+                    if (existing != null) {
+                        songDao.updateSongVideoId(existing.id, song.videoId)
                         if (localPosterUri != null) {
-                            songDao.updateSongArtwork(song.videoId, localPosterUri)
+                            songDao.updateSongArtwork(existing.id, localPosterUri)
                         }
+                    } else {
+                        songDao.insertSong(
+                            com.example.myplayer.data.local.entity.SongEntity(
+                                id = song.videoId,
+                                title = song.title,
+                                artist = song.artist,
+                                album = "Downloads",
+                                duration = song.durationMs,
+                                path = "online://${song.videoId}",
+                                albumArt = effectiveThumbnail,
+                                dateAdded = System.currentTimeMillis(),
+                                playCount = 0,
+                                videoId = song.videoId
+                            )
+                        )
                     }
                 } catch (_: Exception) {}
 

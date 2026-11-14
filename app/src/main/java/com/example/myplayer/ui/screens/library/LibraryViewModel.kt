@@ -10,6 +10,7 @@ import com.example.myplayer.data.repository.DownloadRepository
 import com.example.myplayer.data.repository.HybridLibraryRepository
 import com.example.myplayer.data.repository.MusicRepository
 import com.example.myplayer.data.repository.PlayableSong
+import com.example.myplayer.data.repository.PlaylistRepository
 import com.example.myplayer.data.spotify.SpotifyIntegrationManager
 import com.example.myplayer.data.youtube.YouTubeIntegrationManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -42,22 +43,20 @@ class LibraryViewModel @Inject constructor(
         downloadRepository.getAllDownloads(),
         repository.getAllSongs()
     ) { crossRefs, downloads, allSongs ->
-        val downloadedIds = downloads.mapTo(HashSet()) { it.id }
-        val songMap = allSongs.associateBy { it.id }
         crossRefs.groupBy { it.playlistId }.mapValues { (_, refs) ->
-            var downloaded = 0
-            var remaining = 0
-            refs.forEach { ref ->
-                val song = songMap[ref.songId]
-                val isDownloaded = downloadedIds.contains(ref.songId) ||
-                    (song?.videoId != null && downloadedIds.contains(song.videoId))
-                val isOnline = song == null || song.path.startsWith("online://") || !song.videoId.isNullOrBlank()
-                when {
-                    isDownloaded -> downloaded++
-                    isOnline -> remaining++
-                }
-            }
-            PlaylistOfflineInfo(refs.size, downloaded, remaining)
+            val resolved = PlaylistRepository.resolvePlaylistSongsForRefs(
+                refs = refs.sortedBy { it.position },
+                joinedSongs = emptyList(),
+                allSongs = allSongs,
+                downloadedSongs = downloads
+            )
+            val downloaded = resolved.count { it is PlayableSong.Downloaded }
+            val remaining = resolved.count { it is PlayableSong.Online }
+            PlaylistOfflineInfo(
+                totalCount = resolved.size,
+                downloadedCount = downloaded,
+                remainingCount = remaining
+            )
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
@@ -93,7 +92,7 @@ class LibraryViewModel @Inject constructor(
     val localSongs: StateFlow<List<PlayableSong>> = repository.getAllSongs()
         .map { list ->
             list.filter { song ->
-                !song.path.startsWith("online://") && !song.id.startsWith("spotify:")
+                !song.path.startsWith("online://") && !song.id.startsWith("spotify:") && (song.id.startsWith("local_") || song.videoId.isNullOrBlank())
             }
             .sortedBy { it.title.lowercase() }
             .map { PlayableSong.Local(it) }

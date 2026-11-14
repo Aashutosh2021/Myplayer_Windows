@@ -49,6 +49,15 @@ class DesktopAppDatabase : AppDatabase() {
         }.flowOn(Dispatchers.IO)
     }
 
+    private fun <T> tablesFlow(tables: Set<String>, query: () -> T): Flow<T> {
+        return flow {
+            emit(query())
+            changeNotifier.filter { it in tables || it == "*" }.collect {
+                emit(query())
+            }
+        }.flowOn(Dispatchers.IO)
+    }
+
     @Synchronized
     private fun initTables(conn: Connection) {
         conn.createStatement().use { stmt ->
@@ -253,7 +262,9 @@ class DesktopAppDatabase : AppDatabase() {
 
         override fun deleteSongsByFolder(folderUri: String) {
             synchronized(connection) {
-                connection.prepareStatement("DELETE FROM songs WHERE path LIKE ?").use { ps ->
+                connection.prepareStatement(
+                    "DELETE FROM songs WHERE path LIKE ? AND id NOT IN (SELECT songId FROM playlist_songs) AND id NOT IN (SELECT id FROM downloaded_songs)"
+                ).use { ps ->
                     ps.setString(1, "$folderUri%")
                     ps.executeUpdate()
                 }
@@ -263,7 +274,15 @@ class DesktopAppDatabase : AppDatabase() {
 
         override fun clearAllLocalSongs() {
             synchronized(connection) {
-                connection.prepareStatement("DELETE FROM songs WHERE path NOT LIKE 'online://%' AND id NOT LIKE 'spotify:%'").use { ps ->
+                connection.prepareStatement("""
+                    DELETE FROM songs 
+                    WHERE path NOT LIKE 'online://%' 
+                      AND id NOT LIKE 'spotify:%' 
+                      AND (videoId IS NULL OR videoId = '')
+                      AND id NOT IN (SELECT id FROM downloaded_songs)
+                      AND id NOT IN (SELECT songId FROM playlist_songs)
+                      AND id NOT IN (SELECT songId FROM favorites)
+                """.trimIndent()).use { ps ->
                     ps.executeUpdate()
                 }
             }
@@ -441,6 +460,16 @@ class DesktopAppDatabase : AppDatabase() {
             notifyChange("playlist_songs")
         }
 
+        override suspend fun deleteAllSongsFromPlaylist(playlistId: Long) {
+            synchronized(connection) {
+                connection.prepareStatement("DELETE FROM playlist_songs WHERE playlistId = ?").use { ps ->
+                    ps.setLong(1, playlistId)
+                    ps.executeUpdate()
+                }
+            }
+            notifyChange("playlist_songs")
+        }
+
         override fun renamePlaylist(playlistId: Long, newName: String) {
             synchronized(connection) {
                 connection.prepareStatement("UPDATE playlists SET name = ? WHERE id = ?").use { ps ->
@@ -467,54 +496,97 @@ class DesktopAppDatabase : AppDatabase() {
         override fun removeSongFromPlaylist(playlistId: Long, songId: String) {
             synchronized(connection) {
                 connection.prepareStatement(
-                    "DELETE FROM playlist_songs WHERE playlistId = ? AND (songId = ? OR songId = 'spotify:' || ? OR songId IN (SELECT id FROM songs WHERE videoId = ? OR path = 'online://' || ?))"
+                    """
+                    DELETE FROM playlist_songs 
+                    WHERE playlistId = ? 
+                      AND (
+                          songId = ? 
+                          OR songId = 'spotify:' || ? 
+                          OR songId = 'online://' || ?
+                          OR REPLACE(REPLACE(songId, 'online://', ''), 'spotify:', '') = REPLACE(REPLACE(?, 'online://', ''), 'spotify:', '')
+                          OR songId IN (SELECT id FROM songs WHERE videoId = ? OR path = 'online://' || ?)
+                      )
+                    """.trimIndent()
                 ).use { ps ->
                     ps.setLong(1, playlistId)
                     ps.setString(2, songId)
                     ps.setString(3, songId)
                     ps.setString(4, songId)
                     ps.setString(5, songId)
+                    ps.setString(6, songId)
+                    ps.setString(7, songId)
                     ps.executeUpdate()
                 }
             }
             notifyChange("playlist_songs")
         }
 
-        override fun getSongsInPlaylist(playlistId: Long): Flow<List<SongEntity>> = tableFlow("playlist_songs") {
-            synchronized(connection) {
-                connection.prepareStatement("""
-                    SELECT songs.* FROM songs 
-                    INNER JOIN playlist_songs ON songs.id = playlist_songs.songId 
-                    WHERE playlist_songs.playlistId = ? 
-                    ORDER BY playlist_songs.position ASC
-                """.trimIndent()).use { ps ->
-                    ps.setLong(1, playlistId)
-                    ps.executeQuery().use { rs ->
-                        val list = mutableListOf<SongEntity>()
-                        while (rs.next()) {
-                            list.add(SongEntity(
-                                id = rs.getString("id"),
-                                title = rs.getString("title"),
-                                artist = rs.getString("artist"),
-                                album = rs.getString("album"),
-                                duration = rs.getLong("duration"),
-                                path = rs.getString("path"),
-                                albumArt = rs.getString("albumArt"),
-                                dateAdded = rs.getLong("dateAdded"),
-                                playCount = rs.getInt("playCount"),
-                                videoId = rs.getString("videoId")
-                            ))
+        override fun getSongsInPlaylist(playlistId: Long): Flow<List<SongEntity>> =
+            tablesFlow(setOf("playlist_songs", "songs", "downloaded_songs")) {
+                synchronized(connection) {
+                    connection.prepareStatement("""
+                        SELECT 
+                            COALESCE(s.id, d.id, ps.songId) AS id,
+                            COALESCE(s.title, d.title, 'Unknown Title') AS title,
+                            COALESCE(s.artist, d.artist, 'Unknown Artist') AS artist,
+                            COALESCE(s.album, NULLIF(d.album, ''), 'Downloads') AS album,
+                            COALESCE(s.duration, d.durationMs, 0) AS duration,
+                            COALESCE(d.localPath, s.path, 'online://' || REPLACE(REPLACE(ps.songId, 'online://', ''), 'spotify:', '')) AS path,
+                            COALESCE(d.thumbnailUrl, s.albumArt) AS albumArt,
+                            COALESCE(s.dateAdded, d.downloadedAt, 0) AS dateAdded,
+                            COALESCE(s.playCount, 0) AS playCount,
+                            COALESCE(s.videoId, d.id, CASE WHEN ps.songId NOT LIKE 'local_%' AND ps.songId NOT LIKE 'spotify:%' THEN REPLACE(ps.songId, 'online://', '') ELSE NULL END) AS videoId
+                        FROM playlist_songs ps
+                        LEFT JOIN songs s ON s.id = ps.songId 
+                            OR s.videoId = ps.songId 
+                            OR s.id = 'spotify:' || ps.songId 
+                            OR s.path = 'online://' || ps.songId
+                        LEFT JOIN downloaded_songs d ON d.id = ps.songId 
+                            OR d.id = REPLACE(REPLACE(ps.songId, 'online://', ''), 'spotify:', '')
+                            OR (s.videoId IS NOT NULL AND d.id = s.videoId)
+                        WHERE ps.playlistId = ? 
+                          AND (s.id IS NOT NULL OR d.id IS NOT NULL)
+                        GROUP BY ps.songId
+                        ORDER BY ps.position ASC
+                    """.trimIndent()).use { ps ->
+                        ps.setLong(1, playlistId)
+                        ps.executeQuery().use { rs ->
+                            val list = mutableListOf<SongEntity>()
+                            while (rs.next()) {
+                                list.add(SongEntity(
+                                    id = rs.getString("id"),
+                                    title = rs.getString("title"),
+                                    artist = rs.getString("artist"),
+                                    album = rs.getString("album"),
+                                    duration = rs.getLong("duration"),
+                                    path = rs.getString("path"),
+                                    albumArt = rs.getString("albumArt"),
+                                    dateAdded = rs.getLong("dateAdded"),
+                                    playCount = rs.getInt("playCount"),
+                                    videoId = rs.getString("videoId")
+                                ))
+                            }
+                            list
                         }
-                        list
                     }
                 }
             }
-        }
 
         override suspend fun updateSongPosition(playlistId: Long, songId: String, position: Int) {
             synchronized(connection) {
                 connection.prepareStatement(
-                    "UPDATE playlist_songs SET position = ? WHERE playlistId = ? AND (songId = ? OR songId = 'spotify:' || ? OR songId IN (SELECT id FROM songs WHERE videoId = ? OR path = 'online://' || ?))"
+                    """
+                    UPDATE playlist_songs 
+                    SET position = ? 
+                    WHERE playlistId = ? 
+                      AND (
+                          songId = ? 
+                          OR songId = 'spotify:' || ? 
+                          OR songId = 'online://' || ?
+                          OR REPLACE(REPLACE(songId, 'online://', ''), 'spotify:', '') = REPLACE(REPLACE(?, 'online://', ''), 'spotify:', '')
+                          OR songId IN (SELECT id FROM songs WHERE videoId = ? OR path = 'online://' || ?)
+                      )
+                    """.trimIndent()
                 ).use { ps ->
                     ps.setInt(1, position)
                     ps.setLong(2, playlistId)
@@ -522,6 +594,8 @@ class DesktopAppDatabase : AppDatabase() {
                     ps.setString(4, songId)
                     ps.setString(5, songId)
                     ps.setString(6, songId)
+                    ps.setString(7, songId)
+                    ps.setString(8, songId)
                     ps.executeUpdate()
                 }
             }
@@ -530,7 +604,18 @@ class DesktopAppDatabase : AppDatabase() {
 
         override suspend fun reorderPlaylistSongs(playlistId: Long, orderedSongIds: List<String>) {
             synchronized(connection) {
-                val sql = "UPDATE playlist_songs SET position = ? WHERE playlistId = ? AND (songId = ? OR songId = 'spotify:' || ? OR songId IN (SELECT id FROM songs WHERE videoId = ? OR path = 'online://' || ?))"
+                val sql = """
+                    UPDATE playlist_songs 
+                    SET position = ? 
+                    WHERE playlistId = ? 
+                      AND (
+                          songId = ? 
+                          OR songId = 'spotify:' || ? 
+                          OR songId = 'online://' || ?
+                          OR REPLACE(REPLACE(songId, 'online://', ''), 'spotify:', '') = REPLACE(REPLACE(?, 'online://', ''), 'spotify:', '')
+                          OR songId IN (SELECT id FROM songs WHERE videoId = ? OR path = 'online://' || ?)
+                      )
+                """.trimIndent()
                 connection.prepareStatement(sql).use { ps ->
                     orderedSongIds.forEachIndexed { index, songId ->
                         ps.setInt(1, index)
@@ -539,6 +624,8 @@ class DesktopAppDatabase : AppDatabase() {
                         ps.setString(4, songId)
                         ps.setString(5, songId)
                         ps.setString(6, songId)
+                        ps.setString(7, songId)
+                        ps.setString(8, songId)
                         ps.addBatch()
                     }
                     ps.executeBatch()
@@ -594,13 +681,28 @@ class DesktopAppDatabase : AppDatabase() {
     }
 
     override fun favoriteDao(): FavoriteDao = object : FavoriteDao {
-        override fun getFavoriteSongs(): Flow<List<SongEntity>> = tableFlow("favorites") {
+        override fun getFavoriteSongs(): Flow<List<SongEntity>> =
+            tablesFlow(setOf("favorites", "songs", "downloaded_songs")) {
             synchronized(connection) {
                 connection.createStatement().use { stmt ->
                     stmt.executeQuery("""
-                        SELECT songs.* FROM songs 
-                        INNER JOIN favorites ON songs.id = favorites.songId 
-                        ORDER BY favorites.addedAt DESC
+                        SELECT 
+                            COALESCE(s.id, d.id, f.songId) AS id,
+                            COALESCE(s.title, d.title, 'Unknown Title') AS title,
+                            COALESCE(s.artist, d.artist, 'Unknown Artist') AS artist,
+                            COALESCE(s.album, NULLIF(d.album, ''), 'Favorites') AS album,
+                            COALESCE(s.duration, d.durationMs, 0) AS duration,
+                            COALESCE(d.localPath, s.path, 'online://' || REPLACE(REPLACE(f.songId, 'online://', ''), 'spotify:', '')) AS path,
+                            COALESCE(d.thumbnailUrl, s.albumArt) AS albumArt,
+                            COALESCE(s.dateAdded, d.downloadedAt, f.addedAt) AS dateAdded,
+                            COALESCE(s.playCount, 0) AS playCount,
+                            COALESCE(s.videoId, d.id) AS videoId
+                        FROM favorites f
+                        LEFT JOIN songs s ON s.id = f.songId OR s.videoId = f.songId
+                        LEFT JOIN downloaded_songs d ON d.id = f.songId OR (s.videoId IS NOT NULL AND d.id = s.videoId)
+                        WHERE s.id IS NOT NULL OR d.id IS NOT NULL
+                        GROUP BY f.songId
+                        ORDER BY f.addedAt DESC
                     """.trimIndent()).use { rs ->
                         val list = mutableListOf<SongEntity>()
                         while (rs.next()) {

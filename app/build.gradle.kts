@@ -90,7 +90,8 @@ compose.desktop {
                 iconFile.set(project.file("icons/MyPlayer.ico"))
                 menuGroup = "MyPlayer"
                 upgradeUuid = "68c22756-3474-4ec5-b006-258d4a9ec110"
-                dirChooser = true
+                // Disable default jpackage dirChooser so jpackage never injects conflicting ui.wxf over our custom MyPlayerSetupUI
+                dirChooser = false
                 shortcut = true
                 menu = true
             }
@@ -100,17 +101,30 @@ compose.desktop {
 
 tasks.withType<org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask>().configureEach {
     iconFile.set(project.file("icons/MyPlayer.ico"))
-    if (name.contains("package", ignoreCase = true) && (name.contains("Exe") || name.contains("Msi"))) {
-        freeArgs.add("--win-shortcut-prompt")
-        // Explicitly pass --resource-dir so jpackage uses package-resources/windows/main.wxs & overrides.wxi
-        val winResDir = project.file("package-resources/windows")
-        if (winResDir.exists()) {
+    val winResDir = project.file("package-resources/windows")
+    if (winResDir.exists()) {
+        // Ensure MyPlayer.ico is present inside package-resources/windows
+        val ico = project.file("icons/MyPlayer.ico")
+        if (ico.exists()) {
+            runCatching { ico.copyTo(File(winResDir, "MyPlayer.ico"), overwrite = true) }
+        }
+        // Bind resourceDir property if exposed on AbstractJPackageTask, otherwise pass single --resource-dir
+        var boundViaProperty = false
+        runCatching {
+            val getter = this.javaClass.methods.firstOrNull { it.name == "getResourceDir" && it.parameterCount == 0 }
+            val prop = getter?.invoke(this) as? org.gradle.api.file.DirectoryProperty
+            if (prop != null) {
+                prop.set(winResDir)
+                boundViaProperty = true
+            }
+        }
+        if (!boundViaProperty) {
             freeArgs.addAll("--resource-dir", winResDir.absolutePath)
         }
     }
 }
 
-tasks.matching { it.name.contains("package", ignoreCase = true) && (it.name.contains("Exe") || it.name.contains("Msi")) }.configureEach {
+tasks.matching { it.name.contains("package", ignoreCase = true) || it.name.contains("Distributable", ignoreCase = true) }.configureEach {
     doFirst {
         val winResDir = file("package-resources/windows")
         winResDir.mkdirs()
@@ -122,6 +136,11 @@ tasks.matching { it.name.contains("package", ignoreCase = true) && (it.name.cont
         resDir.mkdirs()
         winResDir.listFiles()?.forEach { f ->
             f.copyTo(File(resDir, f.name), overwrite = true)
+        }
+        val taskResDir = project.layout.buildDirectory.dir("compose/tmp/${name}/resources").get().asFile
+        taskResDir.mkdirs()
+        winResDir.listFiles()?.forEach { f ->
+            f.copyTo(File(taskResDir, f.name), overwrite = true)
         }
     }
 }

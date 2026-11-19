@@ -118,67 +118,21 @@ fun main() {
 
                     if (!showWhatsNew && availableUpdate != null) {
                         val update = availableUpdate!!
-                        AlertDialog(
-                            onDismissRequest = {
-                                AppContainer.get(UpdateChecker::class.java)?.markNotified(update)
-                                availableUpdate = null
-                            },
-                            containerColor = MaterialTheme.colorScheme.surface,
-                            titleContentColor = MaterialTheme.colorScheme.onSurface,
-                            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            title = { Text("Update Available — ${update.versionName}") },
-                            text = {
-                                Column {
-                                    Text(
-                                        "A new version of MyPlayer for Windows is available!",
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Spacer(Modifier.height(6.dp))
-                                    Text(
-                                        "Download the latest release for new features and performance improvements.",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    if (update.releaseNotes.isNotBlank()) {
-                                        Spacer(Modifier.height(8.dp))
-                                        Text(
-                                            update.releaseNotes.take(300),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
+                        val inAppUpdater = AppContainer.get(com.example.myplayer.data.update.InAppUpdateManager::class.java)
+                        if (inAppUpdater != null) {
+                            com.example.myplayer.ui.components.MyPlayerInAppUpdateDialog(
+                                updateInfo = update,
+                                inAppUpdateManager = inAppUpdater,
+                                onDismiss = {
+                                    AppContainer.get(UpdateChecker::class.java)?.markNotified(update)
+                                    availableUpdate = null
+                                },
+                                onSnooze24h = {
+                                    AppContainer.get(UpdateChecker::class.java)?.snoozeUpdateFor24Hours(update.versionName)
+                                    availableUpdate = null
                                 }
-                            },
-                            confirmButton = {
-                                Button(
-                                    onClick = {
-                                        AppContainer.get(UpdateChecker::class.java)?.markNotified(update)
-                                        availableUpdate = null
-                                        try {
-                                            Desktop.getDesktop().browse(URI(update.releaseUrl))
-                                        } catch (_: Throwable) {}
-                                    },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.primary,
-                                        contentColor = MaterialTheme.colorScheme.onPrimary
-                                    ),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Text("Download Update", fontWeight = FontWeight.Bold)
-                                }
-                            },
-                            dismissButton = {
-                                TextButton(
-                                    onClick = {
-                                        AppContainer.get(UpdateChecker::class.java)?.markNotified(update)
-                                        availableUpdate = null
-                                    }
-                                ) {
-                                    Text("Later")
-                                }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }

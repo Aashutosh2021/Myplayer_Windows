@@ -43,7 +43,7 @@ class HomeViewModel @Inject constructor(
     private val userStateDetector: RecommendationUserStateDetector,
     private val recentHistoryRepository: RecentHistoryRepository,
     private val playedSongHistoryDao: PlayedSongHistoryDao,
-    private val innertubeApi: InnertubeApi,
+    val innertubeApi: InnertubeApi,
     private val recommendationCache: RecommendationCache,
     private val lastFmRecommendationSource: LastFmRecommendationSource,
     private val aiModel: OnDeviceMusicAiModel,
@@ -507,5 +507,24 @@ class HomeViewModel @Inject constructor(
 
     fun playRecommendedSong(song: RecommendationSong) {
         playRecommendedSongs(listOf(song), 0)
+    }
+
+    fun playOnlineSongs(songs: List<OnlineSong>, startIndex: Int = 0) {
+        if (songs.isEmpty()) return
+        val clampedIndex = startIndex.coerceIn(0, songs.size - 1)
+        val mapped = songs.map { song ->
+            if (song.streamUrl.isNullOrBlank()) {
+                song.copy(streamUrl = "online://${song.videoId}")
+            } else {
+                song
+            }
+        }
+        musicController.playOnlineSongs(mapped, clampedIndex)
+        val selected = mapped.getOrNull(clampedIndex)
+        if (selected != null) {
+            viewModelScope.launch(Dispatchers.IO) {
+                repository.addRecentHistory(selected.videoId)
+            }
+        }
     }
 }

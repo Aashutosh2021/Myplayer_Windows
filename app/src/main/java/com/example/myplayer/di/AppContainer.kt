@@ -380,6 +380,25 @@ object AppContainer {
         val updateChecker = com.example.myplayer.data.update.UpdateChecker(appContext, okHttpClient)
         register(com.example.myplayer.data.update.UpdateChecker::class.java, updateChecker)
 
+        val inAppUpdateManager = com.example.myplayer.data.update.InAppUpdateManager(appContext, okHttpClient)
+        register(com.example.myplayer.data.update.InAppUpdateManager::class.java, inAppUpdateManager)
+
+        val autoEqManager = com.example.myplayer.playback.dsp.AutoEqManager(appContext, okHttpClient, centralDsp)
+        register(com.example.myplayer.playback.dsp.AutoEqManager::class.java, autoEqManager)
+
+        val sponsorBlockManager = com.example.myplayer.data.sponsorblock.SponsorBlockManager(okHttpClient)
+        register(com.example.myplayer.data.sponsorblock.SponsorBlockManager::class.java, sponsorBlockManager)
+        runCatching {
+            sponsorBlockManager.attachToPlayer(
+                scope = scope,
+                player = androidx.media3.session.MediaController.getShared(),
+                currentVideoIdProvider = { musicController.currentOnlineSong.value?.videoId ?: musicController.currentSong.value?.id }
+            )
+        }
+
+        val localCastManager = com.example.myplayer.cast.LocalCastManager(appContext, okHttpClient)
+        register(com.example.myplayer.cast.LocalCastManager::class.java, localCastManager)
+
         val backupRestoreManager = com.example.myplayer.data.backup.BackupRestoreManager(
             context = appContext,
             db = db,

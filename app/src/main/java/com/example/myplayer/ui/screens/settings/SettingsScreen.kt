@@ -856,127 +856,15 @@ fun SettingsScreen(
         }
 
         is ManualUpdateState.Available -> {
-
-            AlertDialog(
-
-                onDismissRequest = { viewModel.resetUpdateState() },
-
-                containerColor = MaterialTheme.colorScheme.surface,
-
-                titleContentColor = MaterialTheme.colorScheme.onSurface,
-
-                textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-
-                shape = RoundedCornerShape(24.dp),
-
-                title = { Text("Update Available", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) },
-
-                text = {
-
-                    Column {
-
-                        Text(
-
-                            "A newer version (${state.updateInfo.versionName}) is available!",
-
-                            fontWeight = FontWeight.Bold,
-
-                            color = MaterialTheme.colorScheme.onSurface
-
-                        )
-
-                        Spacer(Modifier.height(4.dp))
-
-                        Text(
-
-                            "Visit our official website to download the latest update.",
-
-                            style = MaterialTheme.typography.bodyMedium,
-
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-
-                        )
-
-                        if (state.updateInfo.releaseNotes.isNotBlank()) {
-
-                            Spacer(Modifier.height(8.dp))
-
-                            Text(
-
-                                state.updateInfo.releaseNotes.take(300),
-
-                                style = MaterialTheme.typography.bodySmall,
-
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-
-                            )
-
-                        }
-
-                    }
-
-                },
-
-                confirmButton = {
-
-                    Button(
-
-                        onClick = {
-
-                            viewModel.resetUpdateState()
-
-                            val intent = Intent(
-
-                                Intent.ACTION_VIEW,
-
-                                Uri.parse(state.updateInfo.releaseUrl)
-
-                            ).apply {
-
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-
-                            }
-
-                            context.startActivity(intent)
-
-                        },
-
-                        colors = ButtonDefaults.buttonColors(
-
-                            containerColor = MaterialTheme.colorScheme.primary,
-
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-
-                        ),
-
-                        shape = RoundedCornerShape(12.dp)
-
-                    ) {
-
-                        Text("Update Now", fontWeight = FontWeight.Bold)
-
-                    }
-
-                },
-
-                dismissButton = {
-
-                    TextButton(
-
-                        onClick = { viewModel.resetUpdateState() },
-
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
-
-                    ) {
-
-                        Text("Later")
-
-                    }
-
+            com.example.myplayer.ui.components.MyPlayerInAppUpdateDialog(
+                updateInfo = state.updateInfo,
+                inAppUpdateManager = viewModel.inAppUpdateManager,
+                onDismiss = { viewModel.resetUpdateState() },
+                onSnooze24h = {
+                    viewModel.updateChecker.snoozeUpdateFor24Hours(state.updateInfo.versionName)
+                    viewModel.resetUpdateState()
                 }
-
             )
-
         }
 
         ManualUpdateState.UpToDate -> {

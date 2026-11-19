@@ -249,11 +249,33 @@ class DownloadWorker @AssistedInject constructor(
                 return Result.failure(workDataOf(KEY_ERROR to "Downloaded file is empty or missing"))
             }
 
+            // Persist album artwork locally so offline playback always shows the song poster
+            val persistedThumbPath = try {
+                val artDir = File(context.filesDir, "artwork").apply { if (!exists()) mkdirs() }
+                val artFile = File(artDir, "${videoId}.jpg")
+                if (artFile.exists() && artFile.length() > 1024L) {
+                    artFile.absolutePath
+                } else if (!thumbnailUrl.isNullOrBlank() && thumbnailUrl.startsWith("http", true)) {
+                    val req = Request.Builder().url(thumbnailUrl).build()
+                    okHttpClient.newCall(req).execute().use { resp ->
+                        if (resp.isSuccessful) {
+                            val bytes = resp.body?.bytes()
+                            if (bytes != null && bytes.size > 512) {
+                                artFile.writeBytes(bytes)
+                                artFile.absolutePath
+                            } else thumbnailUrl
+                        } else thumbnailUrl
+                    }
+                } else thumbnailUrl
+            } catch (_: Exception) {
+                thumbnailUrl
+            }
+
             val entity = DownloadedSongEntity(
                 id = videoId,
                 title = title,
                 artist = artist,
-                thumbnailUrl = thumbnailUrl,
+                thumbnailUrl = persistedThumbPath,
                 durationMs = durationMs,
                 localPath = savedPath,
                 fileSizeBytes = fileSize,
@@ -276,16 +298,30 @@ class DownloadWorker @AssistedInject constructor(
                 Log.e("DownloadWorker", "Failed to synchronize local song path in SongDao", e)
             }
 
-            // Automatically download and cache lyrics upon successful download
+            // Automatically download and cache offline .lrc lyrics (DB + filesDir/lyrics + companion .lrc)
             try {
-                lyricsRepository.fetchAndCacheLyrics(
+                val lyricsResult = lyricsRepository.fetchLyrics(
                     songId = videoId,
                     trackName = title,
                     artistName = artist,
-                    durationSeconds = (durationMs / 1000).toInt()
+                    durationSeconds = (durationMs / 1000).toInt(),
+                    localPath = savedPath
                 )
+                val lrcText = lyricsResult?.syncedLyrics?.takeIf { it.isNotBlank() }
+                    ?: lyricsResult?.plainLyrics?.takeIf { it.isNotBlank() }
+                if (!lrcText.isNullOrBlank()) {
+                    lyricsRepository.saveOfflineLrcFile(videoId, lrcText)
+                    val targetAudio = File(savedPath)
+                    if (targetAudio.exists()) {
+                        targetAudio.parentFile?.let { parent ->
+                            runCatching {
+                                File(parent, "${targetAudio.nameWithoutExtension}.lrc").writeText(lrcText)
+                            }
+                        }
+                    }
+                }
             } catch (e: Exception) {
-                Log.e("DownloadWorker", "Failed to auto-cache lyrics for $videoId during download", e)
+                Log.e("DownloadWorker", "Failed to auto-cache offline lyrics for $videoId during download", e)
             }
 
             setProgress(workDataOf(KEY_PROGRESS to 100))

@@ -375,42 +375,39 @@ object DesktopAudioBackend {
         }
     }
 
+    // Only true when AudioFeatureManagers initiates an automatic end-of-track crossfade.
+    // Manual song changes (Next/Prev/click) leave this false so they switch directly without crossfade.
+    @Volatile var isAutoCrossfadePending: Boolean = false
+
+    /**
+     * Immediately cancels any in-progress dual-deck crossfade and restores full volume
+     * so manual track skips or playlist clicks switch directly with zero overlap.
+     */
+    @Synchronized
+    fun abortActiveCrossfade() {
+        isAutoCrossfadePending = false
+        manualCrossfadeRampInJob?.cancel()
+        manualCrossfadeRampInJob = null
+        stopOutgoingDeckImmediate()
+        isCrossfading = false
+        crossfadeEnvelope = 1.0f
+        DesktopMyPlayerDspPipeline.crossfadeBassCutFactor = 0f
+        applyEffectiveVolume()
+    }
+
     /**
      * Called by Session.kt during track switches (`seekToNext`, `setMediaItem`, `setMediaItems`).
-     * When Crossfade is enabled and a track is playing, hands off the outgoing track to the
-     * secondary deck instead of abruptly cutting audio!
+     * Crossfade runs STRICTLY on automatic end-of-track transitions (`isAutoCrossfadePending == true`).
+     * Manual skips / clicks abort any active crossfade and switch immediately.
      */
     fun prepareForTrackSwitch() {
-        if (MyPlayerAudioFxDspBridge.isAnyCrossfadeActive && isPlaying()) {
-            val fadeMs = (MyPlayerAudioFxDspBridge.crossfadeSeconds.coerceIn(1f, 12f) * 1000f).toLong()
-            val handedOff = beginCrossfadeHandoff(fadeMs)
-            if (handedOff) {
-                // Start a smooth sine ramp-in as soon as the new track starts playing
-                manualCrossfadeRampInJob?.cancel()
-                manualCrossfadeRampInJob = backendScope.launch {
-                    var waited = 0L
-                    while (isActive && !isPlaying() && waited < 3500L) {
-                        delay(50L)
-                        waited += 50L
-                    }
-                    val steps = 28
-                    val stepDelay = (fadeMs / steps).coerceIn(35L, 180L)
-                    for (step in 1..steps) {
-                        if (!isActive || !isCrossfading) break
-                        val p = step.toFloat() / steps.toFloat()
-                        crossfadeEnvelope = sin(p * (PI / 2.0)).toFloat().coerceIn(0.04f, 1.0f)
-                        DesktopMyPlayerDspPipeline.crossfadeBassCutFactor = (sin(p * PI).toFloat() * 0.65f).coerceIn(0f, 0.75f)
-                        applyEffectiveVolume()
-                        delay(stepDelay)
-                    }
-                    DesktopMyPlayerDspPipeline.crossfadeBassCutFactor = 0f
-                    crossfadeEnvelope = 1.0f
-                    isCrossfading = false
-                    applyEffectiveVolume()
-                }
-                return
-            }
+        val autoTriggered = isAutoCrossfadePending
+        isAutoCrossfadePending = false
+        if (autoTriggered && isCrossfading) {
+            // AudioFeatureManagers already handed off the outgoing deck; keep outgoing fading out!
+            return
         }
+        abortActiveCrossfade()
         stopActiveDeckOnly()
     }
 

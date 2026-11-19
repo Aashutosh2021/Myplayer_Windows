@@ -142,3 +142,9 @@ class Parcel {
 @Target(AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.SOURCE)
 annotation class Parcelize
+
+
+object SystemClock {
+    fun elapsedRealtime(): Long = System.nanoTime() / 1_000_000L
+    fun uptimeMillis(): Long = System.nanoTime() / 1_000_000L
+}

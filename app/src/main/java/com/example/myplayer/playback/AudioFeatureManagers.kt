@@ -101,6 +101,7 @@ class AudioFeatureManagers @Inject constructor(
                         }
 
                         player.volume = 0.04f
+                        DesktopAudioBackend.isAutoCrossfadePending = handedOff
                         if (player.mediaItemCount > 1 && player.hasNextMediaItem()) {
                             player.seekToNextMediaItem()
                         } else if (onTriggerNextTrack != null) {
@@ -120,7 +121,7 @@ class AudioFeatureManagers @Inject constructor(
                         val rampInSteps = 28
                         val stepDelayMs = (actualOverlapMs / rampInSteps).coerceIn(35L, 180L)
                         for (step in 1..rampInSteps) {
-                            if (!isActive) break
+                            if (!isActive || (handedOff && !DesktopAudioBackend.isCrossfading)) break
                             val inProgress = step.toFloat() / rampInSteps.toFloat()
                             val equalPowerIn = sin(inProgress * (PI / 2.0)).toFloat().coerceIn(0.04f, 1.0f)
                             DesktopMyPlayerDspPipeline.crossfadeBassCutFactor =
@@ -152,7 +153,7 @@ class AudioFeatureManagers @Inject constructor(
             val t = URLEncoder.encode(trackTitle, "UTF-8")
             val a = URLEncoder.encode(artistName, "UTF-8")
             val url = "https://lrclib.net/api/get?track_name=$t&artist_name=$a&duration=$durationSeconds"
-            val req = Request.Builder().url(url).header("User-Agent", "MyPlayer/6.6").build()
+            val req = Request.Builder().url(url).header("User-Agent", "MyPlayer/6.8").build()
 
             okHttpClient.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return@withContext null

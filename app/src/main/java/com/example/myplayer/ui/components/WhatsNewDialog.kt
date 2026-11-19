@@ -10,7 +10,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -47,26 +46,33 @@ object WhatsNewRepository {
 
     fun getCurrentFeatures(): List<WhatsNewFeature> = listOf(
         WhatsNewFeature(
-            icon = Icons.Filled.FolderOpen,
-            title = "Local Music Folder Access & Audio Scanner",
-            description = "Set your local music folder path in Settings or Library > Local Files to scan and play all your local MP3, M4A, FLAC, and WAV songs."
+            icon = Icons.Filled.SystemUpdate,
+            title = "Windows In-App Updater + Beta Channel",
+            description = "Download and launch .msi/.exe updates directly inside MyPlayer Windows with live progress, 24h snooze, and automatic website download analytics sync."
         ),
         WhatsNewFeature(
-            icon = Icons.Filled.AudioFile,
-            title = "Download MP3 / M4A Files to Device Storage",
-            description = "Every song menu now includes 'Download MP3 File' and 'Download M4A File' alongside 'Download Offline' so you can save accessible audio files directly in Downloads/MyPlayer & Music/MyPlayer."
+            icon = Icons.Filled.Explore,
+            title = "Explore Moods & Genres + 50% Taste Mix",
+            description = "Browse multi-section Mood & Genre carousels blended 50/50 with your music taste and Bollywood/Indian mixes, with dedicated covers and zero duplicate song thumbnails."
         ),
         WhatsNewFeature(
-            icon = Icons.Filled.PlayCircleFilled,
-            title = "YouTube Music Login, Playlist Import & AI Recommendations",
-            description = "Sign in to YouTube Music or paste any YouTube/Spotify playlist link to import playlists and blend personalized recommendations into your 128-D AI engine."
+            icon = Icons.Filled.GraphicEq,
+            title = "Auto-Only Crossfade & Dual-Deck Stability",
+            description = "Crossfade now runs strictly on automatic end-of-track transitions so manual Next/Previous skips and song clicks switch instantly without overlap."
+        ),
+        WhatsNewFeature(
+            icon = Icons.Filled.Lyrics,
+            title = "Offline Artwork, Synced Lyrics & Multi-Provider Engine",
+            description = "Offline downloads persist album art and .lrc lyrics locally, plus multi-provider synced lyrics (BetterLyrics, LyricsPlus, SimpMusic, KuGou, NetEase, LRCLIB)."
+        ),
+        WhatsNewFeature(
+            icon = Icons.Filled.Headphones,
+            title = "AutoEq, SponsorBlock, DLNA Cast & Signal Path",
+            description = "Added AutoEq headphone database, privacy-first SponsorBlock segment skipping, LAN DLNA casting, Desktop Signal Path Inspector, and PNG Lyric Card exporter."
         )
     )
 }
 
-/**
- * Modern "What's New" Changelog Dialog shown automatically after an app update.
- */
 @Composable
 fun WhatsNewDialog(
     onDismiss: () -> Unit,
@@ -79,7 +85,7 @@ fun WhatsNewDialog(
     ) {
         Surface(
             modifier = Modifier
-                .fillMaxWidth(0.92f)
+                .widthIn(min = 460.dp, max = 560.dp)
                 .wrapContentHeight()
                 .padding(vertical = 24.dp)
                 .clip(RoundedCornerShape(28.dp))
@@ -95,9 +101,8 @@ fun WhatsNewDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(22.dp)
+                    .padding(24.dp)
             ) {
-                // ── Header: Badge & Close Button ────────────────────────────
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -109,7 +114,7 @@ fun WhatsNewDialog(
                     ) {
                         val displayVersion = if (versionName.startsWith("v", ignoreCase = true)) versionName else "v$versionName"
                         Text(
-                            text = "$displayVersion UPDATE",
+                            text = "$displayVersion WINDOWS UPDATE",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 0.8.sp
@@ -119,10 +124,7 @@ fun WhatsNewDialog(
                         )
                     }
 
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.size(32.dp)
-                    ) {
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
                         Icon(
                             imageVector = Icons.Filled.Close,
                             contentDescription = "Close",
@@ -135,7 +137,7 @@ fun WhatsNewDialog(
                 Spacer(Modifier.height(12.dp))
 
                 Text(
-                    text = "What's New in MyPlayer",
+                    text = "What's New in MyPlayer Windows",
                     style = MaterialTheme.typography.titleLarge.copy(
                         fontWeight = FontWeight.Bold,
                         fontSize = 22.sp
@@ -146,18 +148,17 @@ fun WhatsNewDialog(
                 Spacer(Modifier.height(4.dp))
 
                 Text(
-                    text = "Here's what just got improved and added to your music experience.",
+                    text = "All Android v6.8 features, now tuned and optimized for Windows Desktop.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
                 Spacer(Modifier.height(18.dp))
 
-                // ── Feature Highlights List ──────────────────────────────────
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 340.dp),
+                        .heightIn(max = 360.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     items(features) { feature ->
@@ -207,7 +208,6 @@ fun WhatsNewDialog(
 
                 Spacer(Modifier.height(20.dp))
 
-                // ── Primary Action Button ────────────────────────────────────
                 Button(
                     onClick = onDismiss,
                     modifier = Modifier
